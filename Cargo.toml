@@ -13,19 +13,15 @@ v3 = ["rusty_paseto/v3"]
 v4 = ["rusty_paseto/v4"]
 public = ["rusty_paseto/public"]
 local = ["rusty_paseto/local"]
-v1_local = ["v1", "local", "core", "aes", "sha2", "rusty_paseto/v1_local"]
-v2_local = ["v2", "local", "core", "blake2", "chacha20", "rusty_paseto/v2_local"]
-v3_local = ["v3", "local", "core", "aes", "sha2", "rusty_paseto/v3_local"]
-v4_local = ["v4", "local", "core", "blake2", "chacha20", "rusty_paseto/v4_local"]
-v1_public = ["v1", "public", "core", "rusty_paseto/v1_public"]
-v2_public = ["v2", "public", "core", "rusty_paseto/v2_public"]
-v3_public = ["v3", "public", "core", "rusty_paseto/v3_public"]
-v4_public = ["v4", "public", "core", "rusty_paseto/v4_public"]
-core = ["rusty_paseto/core"]
-generic = ["core", "rusty_paseto/generic"]
-batteries_included = ["generic", "rusty_paseto/batteries_included"]
+v1_local = ["v1", "local", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v1_local"]
+v2_local = ["v2", "local", "blake2", "chacha20", "rusty_paseto/v2_local"]
+v3_local = ["v3", "local", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v3_local"]
+v4_local = ["v4", "local", "blake2", "chacha20", "rusty_paseto/v4_local"]
+v1_public = ["v1", "public", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v1_public"]
+v2_public = ["v2", "public", "blake2", "chacha20", "rusty_paseto/v2_public"]
+v3_public = ["v3", "public", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v3_public"]
+v4_public = ["v4", "public", "blake2", "chacha20", "rusty_paseto/v4_public"]
 default = [
-  "batteries_included",
   "v3_public",
   "v3_local",
   "v4_local",
@@ -33,16 +29,20 @@ default = [
 ]
 
 [dependencies]
-rusty_paseto = { version = "0.5.0", default-features = false }
+rusty_paseto = { version = "0.5.0", default-features = false, features = ["core"] }
 subtle = "2.5.0"
 generic-array = "0.14"
-rand = "0.8"
 base64ct = "1.6.0"
+base64 = "0.13.0"
+cipher = "0.4.4"
+digest = { version = "0.10.7", features = ["mac"] }
 
 chacha20 = { version = "0.9.1", optional = true }
 blake2 = { version = "0.10.6", optional = true }
-base64_13 = { package="base64", version = "^0.13.0", optional = false }
-base64 = { version = "^0.21.0", optional = false }
-# aes = { version = "0.7.5", features = ["ctr"], optional = true }
-# hmac = { version = "0.12.1", optional = true }
+aes = { version = "0.8.2", optional = true }
+ctr = { version = "0.9.2", optional = true }
+hmac = { version = "0.12.1", optional = true }
 sha2 = { version = "0.10.2", optional = true }
+
+[dev-dependencies]
+rand = "0.8"

@@ -1,20 +1,51 @@
-//! Key ID encodings
+//! This operation calculates the unique ID for a given PASERK.
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
-
+//!
+//! # Local IDs
+//! ```
+//! use rusty_paserk::id::EncodeId;
+//! use rusty_paseto::core::{PasetoSymmetricKey, V4, Local, Key};
+//!
+//! let local_key = PasetoSymmetricKey::<V4, Local>::from(Key::try_new_random().unwrap());
+//! let kid = local_key.encode_id();
+//! // => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
+//! ```
+//!
+//! # Secret IDs
+//! ```
+//! use rusty_paserk::id::EncodeId;
+//! use rusty_paseto::core::{PasetoAsymmetricPrivateKey, V4, Public, Key};
+//!
+//! let secret_key = Key::try_new_random().unwrap();
+//! let secret_key = PasetoAsymmetricPrivateKey::<V4, Public>::from(&secret_key);
+//! let kid = secret_key.encode_id();
+//! // => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
+//! ```
+//!
+//! # Public IDs
+//! ```
+//! use rusty_paserk::id::EncodeId;
+//! use rusty_paseto::core::{PasetoAsymmetricPublicKey, V4, Public, Key};
+//!
+//! let public_key = Key::try_new_random().unwrap();
+//! let public_key = PasetoAsymmetricPublicKey::<V4, Public>::from(&public_key);
+//! let kid = public_key.encode_id();
+//! // => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
+//! ```
 use std::io::Write;
 
-use base64::{engine::general_purpose, write::EncoderStringWriter};
+use base64::{write::EncoderStringWriter, URL_SAFE_NO_PAD};
 use generic_array::typenum::U33;
 
 #[cfg(feature = "v1")]
-use rusty_paseto::prelude::V1;
+use rusty_paseto::core::V1;
 #[cfg(feature = "v2")]
-use rusty_paseto::prelude::V2;
+use rusty_paseto::core::V2;
 #[cfg(feature = "v3")]
-use rusty_paseto::prelude::V3;
+use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
-use rusty_paseto::prelude::V4;
+use rusty_paseto::core::V4;
 
 /// Key ID encodings <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
 pub trait EncodeId {
@@ -25,19 +56,19 @@ pub trait EncodeId {
 #[cfg(feature = "local")]
 /// local-id <https://github.com/paseto-standard/paserk/blob/master/types/lid.md>
 mod local {
-    use rusty_paseto::prelude::{Local, PasetoSymmetricKey};
+    use rusty_paseto::core::{Local, PasetoSymmetricKey};
 
     use super::*;
 
     #[cfg(feature = "v1")]
-    impl EncodeId for PasetoSymmetricKey<V3, Local> {
+    impl EncodeId for PasetoSymmetricKey<V1, Local> {
         fn encode_id(&self) -> String {
             encode_v1_v3("k1.lid.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v2")]
-    impl EncodeId for PasetoSymmetricKey<V4, Local> {
+    impl EncodeId for PasetoSymmetricKey<V2, Local> {
         fn encode_id(&self) -> String {
             encode_v2_v4("k2.lid.", self.as_ref())
         }
@@ -62,7 +93,7 @@ mod local {
 /// public-id <https://github.com/paseto-standard/paserk/blob/master/types/pid.md>
 /// secret-id <https://github.com/paseto-standard/paserk/blob/master/types/sid.md>
 mod public {
-    use rusty_paseto::prelude::{PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, Public};
+    use rusty_paseto::core::{PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, Public};
 
     use super::*;
 
@@ -135,8 +166,7 @@ fn encode_v1_v3(header: &str, key: &[u8]) -> String {
     let d = derive_d.finalize();
     let d = &d[..33];
 
-    let mut enc = EncoderStringWriter::from_consumer(header.to_owned(), &general_purpose::URL_SAFE);
-    enc.write_all(header.as_bytes()).unwrap();
+    let mut enc = EncoderStringWriter::from(header.to_owned(), URL_SAFE_NO_PAD);
     enc.write_all(d).unwrap();
     enc.into_inner()
 }
@@ -152,8 +182,7 @@ fn encode_v2_v4(header: &str, key: &[u8]) -> String {
     derive_d.update(key);
     let d = derive_d.finalize();
 
-    let mut enc = EncoderStringWriter::from_consumer(header.to_owned(), &general_purpose::URL_SAFE);
-    enc.write_all(header.as_bytes()).unwrap();
+    let mut enc = EncoderStringWriter::from(header.to_owned(), URL_SAFE_NO_PAD);
     enc.write_all(&d).unwrap();
     enc.into_inner()
 }
