@@ -23,7 +23,6 @@ use rusty_paseto::core::V4;
 ///
 /// let wrapping_key = PasetoSymmetricKey::<V4, Local>::from(Key::try_new_random().unwrap());
 ///
-/// // Local wrapping
 /// let local_key = PasetoSymmetricKey::from(Key::try_new_random().unwrap());
 /// let nonce = Key::try_new_random().unwrap();
 ///
@@ -38,13 +37,12 @@ use rusty_paseto::core::V4;
 /// # Secret Wrapping
 /// ```
 /// use rusty_paserk::wrap::{Pie, SecretWrapperExt};
-/// use rusty_paseto::core::{PasetoSymmetricKey, PasetoAsymmetricPrivateKey, V4, Key};
+/// use rusty_paseto::core::{PasetoSymmetricKey, PasetoAsymmetricPrivateKey, V4, Public, Key};
 ///
 /// let wrapping_key = PasetoSymmetricKey::from(Key::try_new_random().unwrap());
 ///
-/// // Secret wrapping
 /// let secret_key = Key::try_new_random().unwrap();
-/// let secret_key = PasetoAsymmetricPrivateKey::from(&secret_key);
+/// let secret_key = PasetoAsymmetricPrivateKey::<V4, Public>::from(&secret_key);
 /// let nonce = Key::try_new_random().unwrap();
 ///
 /// let wrapped_secret = Pie::wrap_secret(&secret_key, &wrapping_key, &nonce);
@@ -453,7 +451,7 @@ mod pie {
             chacha.apply_keystream_inout(InOutBuf::new(ptk, &mut c).unwrap());
 
             // step 6: Calculate the authentication tag `t`
-            let mut derive_tag = <D2 as Mac>::new_from_slice(&ak).unwrap();
+            let mut derive_tag = <D2 as Mac>::new_from_slice(&ak[..32]).unwrap();
             derive_tag.update(h.as_bytes());
             derive_tag.update(n.as_ref());
             derive_tag.update(&c);
@@ -507,7 +505,7 @@ mod pie {
             let ak = derive_ak.finalize().into_bytes();
 
             // step 3: Recalculate the authentication tag t2
-            let mut derive_tag = <D2 as Mac>::new_from_slice(&ak).unwrap();
+            let mut derive_tag = <D2 as Mac>::new_from_slice(&ak[..32]).unwrap();
             derive_tag.update(h.as_bytes());
             derive_tag.update(n);
             derive_tag.update(c);

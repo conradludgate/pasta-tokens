@@ -63,28 +63,28 @@ mod local {
     #[cfg(feature = "v1")]
     impl EncodeId for PasetoSymmetricKey<V1, Local> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k1.lid.", self.as_ref())
+            encode_v1_v3("k1.lid.", "k1.local.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v2")]
     impl EncodeId for PasetoSymmetricKey<V2, Local> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k2.lid.", self.as_ref())
+            encode_v2_v4("k2.lid.", "k2.local.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v3")]
     impl EncodeId for PasetoSymmetricKey<V3, Local> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k3.lid.", self.as_ref())
+            encode_v1_v3("k3.lid.", "k3.local.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v4")]
     impl EncodeId for PasetoSymmetricKey<V4, Local> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k4.lid.", self.as_ref())
+            encode_v2_v4("k4.lid.", "k4.local.", self.as_ref())
         }
     }
 }
@@ -100,56 +100,56 @@ mod public {
     #[cfg(feature = "v1")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V1, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k1.sid.", self.as_ref())
+            encode_v1_v3("k1.sid.", "k1.secret.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v2")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V2, Public> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k2.sid.", self.as_ref())
+            encode_v2_v4("k2.sid.", "k2.secret.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v3")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V3, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k3.sid.", self.as_ref())
+            encode_v1_v3("k3.sid.", "k3.secret.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v4")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V4, Public> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k4.sid.", self.as_ref())
+            encode_v2_v4("k4.sid.", "k4.secret.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v1")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V1, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k1.pid.", self.as_ref())
+            encode_v1_v3("k1.pid.", "k1.public.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v2")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V2, Public> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k2.pid.", self.as_ref())
+            encode_v2_v4("k2.pid.", "k2.public.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v3")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V3, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k3.pid.", self.as_ref())
+            encode_v1_v3("k3.pid.", "k3.public.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v4")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V4, Public> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k4.pid.", self.as_ref())
+            encode_v2_v4("k4.pid.", "k4.public.", self.as_ref())
         }
     }
 }
@@ -157,12 +157,21 @@ mod public {
 /// V1 and V3 keys use the same encoding
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-1-and-3>
 #[cfg(any(feature = "v1", feature = "v3"))]
-fn encode_v1_v3(header: &str, key: &[u8]) -> String {
+fn encode_v1_v3(header: &str, header2: &str, key: &[u8]) -> String {
+    use base64ct::{Base64UrlUnpadded, Encoding};
     use sha2::digest::Digest;
 
     let mut derive_d = sha2::Sha384::new();
     derive_d.update(header);
-    derive_d.update(key);
+    derive_d.update(header2);
+
+    if key.len() <= 64 {
+        let mut output = [0; 64 * 4 / 3];
+        derive_d.update(Base64UrlUnpadded::encode(key, &mut output).unwrap());
+    } else {
+        derive_d.update(Base64UrlUnpadded::encode_string(key));
+    }
+
     let d = derive_d.finalize();
     let d = &d[..33];
 
@@ -174,12 +183,17 @@ fn encode_v1_v3(header: &str, key: &[u8]) -> String {
 /// V2 and V4 keys use the same encoding
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-2-and-4>
 #[cfg(any(feature = "v2", feature = "v4"))]
-fn encode_v2_v4(header: &str, key: &[u8]) -> String {
+fn encode_v2_v4(header: &str, header2: &str, key: &[u8]) -> String {
+    use base64ct::{Base64UrlUnpadded, Encoding};
     use blake2::digest::Digest;
 
     let mut derive_d = blake2::Blake2b::<U33>::new();
     derive_d.update(header);
-    derive_d.update(key);
+    derive_d.update(header2);
+
+    let mut output = [0; 64 * 4 / 3 + 4];
+    derive_d.update(Base64UrlUnpadded::encode(key, &mut output).unwrap());
+
     let d = derive_d.finalize();
 
     let mut enc = EncoderStringWriter::from(header.to_owned(), URL_SAFE_NO_PAD);

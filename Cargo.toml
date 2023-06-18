@@ -2,6 +2,9 @@
 name = "rusty_paserk"
 version = "0.1.0"
 edition = "2021"
+authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/conradludgate/rusty-paserk"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -22,6 +25,10 @@ v2_public = ["v2", "public", "blake2", "chacha20", "rusty_paseto/v2_public"]
 v3_public = ["v3", "public", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v3_public"]
 v4_public = ["v4", "public", "blake2", "chacha20", "rusty_paseto/v4_public"]
 default = [
+  "v1_public",
+  "v1_local",
+  "v2_local",
+  "v2_public",
   "v3_public",
   "v3_local",
   "v4_local",
@@ -46,3 +53,6 @@ sha2 = { version = "0.10.2", optional = true }
 
 [dev-dependencies]
 rand = "0.8"
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+hex = "0.4"
