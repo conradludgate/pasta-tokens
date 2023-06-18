@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/conradludgate/rusty-paserk"
+description = "PASERK implementation"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
