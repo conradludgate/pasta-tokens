@@ -3,12 +3,17 @@ name = "rusty_paserk"
 version = "0.1.0"
 edition = "2021"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
-license = "MIT"
 repository = "https://github.com/conradludgate/rusty-paserk"
-description = "PASERK implementation"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
+description = "Platform Agnostic Serializable Keys (PASERK) is an extension on PASETO for key management"
+license = "MIT"
+keywords = ["paseto", "paserk", "token", "security", "api", "web"]
+categories = [
+  "cryptography",
+  "authentication",
+  "encoding",
+  "network-programming",
+  "web-programming",
+]
 
 [features]
 v1 = ["rusty_paseto/v1"]
@@ -26,6 +31,10 @@ v2_public = ["v2", "public", "blake2", "chacha20", "rusty_paseto/v2_public"]
 v3_public = ["v3", "public", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v3_public"]
 v4_public = ["v4", "public", "blake2", "chacha20", "rusty_paseto/v4_public"]
 default = [
+  "v1_public",
+  "v1_local",
+  "v2_local",
+  "v2_public",
   "v3_public",
   "v3_local",
   "v4_local",
@@ -40,6 +49,11 @@ base64ct = "1.6.0"
 base64 = "0.13.0"
 cipher = "0.4.4"
 digest = { version = "0.10.7", features = ["mac"] }
+pbkdf2 = "0.12.1"
+rand = "0.8.5"
+x25519-dalek = { version = "2.0.0-rc.2", features = ["static_secrets"] }
+ed25519-dalek = "2.0.0-rc.2"
+curve25519-dalek = "4.0.0-rc.2"
 
 chacha20 = { version = "0.9.1", optional = true }
 blake2 = { version = "0.10.6", optional = true }
