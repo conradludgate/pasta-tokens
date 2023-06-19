@@ -26,10 +26,6 @@ v2_public = ["v2", "public", "blake2", "chacha20", "rusty_paseto/v2_public"]
 v3_public = ["v3", "public", "hmac", "aes", "ctr", "sha2", "rusty_paseto/v3_public"]
 v4_public = ["v4", "public", "blake2", "chacha20", "rusty_paseto/v4_public"]
 default = [
-  "v1_public",
-  "v1_local",
-  "v2_local",
-  "v2_public",
   "v3_public",
   "v3_local",
   "v4_local",

@@ -33,9 +33,6 @@
 //! let kid = public_key.encode_id();
 //! // => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
 //! ```
-use std::io::Write;
-
-use base64::{write::EncoderStringWriter, URL_SAFE_NO_PAD};
 use generic_array::typenum::U33;
 
 #[cfg(feature = "v1")]
@@ -100,7 +97,7 @@ mod public {
     #[cfg(feature = "v1")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V1, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k1.sid.", "k1.secret.", self.as_ref())
+            encode_v1_arbitraty("k1.sid.", "k1.secret.", self.as_ref())
         }
     }
 
@@ -128,7 +125,7 @@ mod public {
     #[cfg(feature = "v1")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V1, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k1.pid.", "k1.public.", self.as_ref())
+            encode_v1_arbitraty("k1.pid.", "k1.public.", self.as_ref())
         }
     }
 
@@ -154,6 +151,28 @@ mod public {
     }
 }
 
+/// V1 assymetrical keys are arbitrary length so they need extra consideration
+#[cfg(any(feature = "v1"))]
+fn encode_v1_arbitraty(header: &str, header2: &str, key: &[u8]) -> String {
+    use base64ct::{Base64UrlUnpadded, Encoding};
+    use sha2::digest::Digest;
+
+    let mut output = vec![0; usize::max(Base64UrlUnpadded::encoded_len(key), 44)];
+    let p = Base64UrlUnpadded::encode(key, &mut output).unwrap();
+
+    let mut derive_d = sha2::Sha384::new();
+    derive_d.update(header);
+    derive_d.update(header2);
+    derive_d.update(p);
+    let d = derive_d.finalize();
+    let d = &d[..33];
+
+    // > When base64url-encoded, d will produce an unpadded 44-byte string.
+    // 44 < output.len()
+    let b64d = Base64UrlUnpadded::encode(d, &mut output).unwrap();
+    format!("{header}{b64d}")
+}
+
 /// V1 and V3 keys use the same encoding
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-1-and-3>
 #[cfg(any(feature = "v1", feature = "v3"))]
@@ -161,23 +180,22 @@ fn encode_v1_v3(header: &str, header2: &str, key: &[u8]) -> String {
     use base64ct::{Base64UrlUnpadded, Encoding};
     use sha2::digest::Digest;
 
+    // V3 Public keys are 49 bytes, V3 private keys are 48 bytes, symmetric keys are 32 bytes.
+    // allocate enough space for 49 bytes base64 encoded which is ~66
+    let mut output = [0; 49 * 4 / 3 + 3];
+    let p = Base64UrlUnpadded::encode(key, &mut output).unwrap();
+
     let mut derive_d = sha2::Sha384::new();
     derive_d.update(header);
     derive_d.update(header2);
-
-    if key.len() <= 64 {
-        let mut output = [0; 64 * 4 / 3];
-        derive_d.update(Base64UrlUnpadded::encode(key, &mut output).unwrap());
-    } else {
-        derive_d.update(Base64UrlUnpadded::encode_string(key));
-    }
-
+    derive_d.update(p);
     let d = derive_d.finalize();
     let d = &d[..33];
 
-    let mut enc = EncoderStringWriter::from(header.to_owned(), URL_SAFE_NO_PAD);
-    enc.write_all(d).unwrap();
-    enc.into_inner()
+    // > When base64url-encoded, d will produce an unpadded 44-byte string.
+    // 44 < output.len()
+    let b64d = Base64UrlUnpadded::encode(d, &mut output).unwrap();
+    format!("{header}{b64d}")
 }
 
 /// V2 and V4 keys use the same encoding
@@ -187,16 +205,19 @@ fn encode_v2_v4(header: &str, header2: &str, key: &[u8]) -> String {
     use base64ct::{Base64UrlUnpadded, Encoding};
     use blake2::digest::Digest;
 
+    // Public keys are 32 bytes, private keys are 64 bytes, symmetric keys are 32 bytes.
+    // allocate enough space for 64 bytes base64 encoded which is ~86
+    let mut output = [0; 64 * 4 / 3 + 3];
+    let p = Base64UrlUnpadded::encode(key, &mut output).unwrap();
+
     let mut derive_d = blake2::Blake2b::<U33>::new();
     derive_d.update(header);
     derive_d.update(header2);
-
-    let mut output = [0; 64 * 4 / 3 + 4];
-    derive_d.update(Base64UrlUnpadded::encode(key, &mut output).unwrap());
-
+    derive_d.update(p);
     let d = derive_d.finalize();
 
-    let mut enc = EncoderStringWriter::from(header.to_owned(), URL_SAFE_NO_PAD);
-    enc.write_all(&d).unwrap();
-    enc.into_inner()
+    // > When base64url-encoded, d will produce an unpadded 44-byte string.
+    // 44 < output.len()
+    let b64d = Base64UrlUnpadded::encode(&d, &mut output).unwrap();
+    format!("{header}{b64d}")
 }

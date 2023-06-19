@@ -399,6 +399,7 @@ mod pie {
 
     mod generic {
         use std::io::Write;
+        use std::ops::{Add, Sub};
 
         use base64::{write::EncoderStringWriter, URL_SAFE_NO_PAD};
         use base64ct::{Base64UrlUnpadded, Encoding};
@@ -406,6 +407,9 @@ mod pie {
         use cipher::Unsigned;
         use cipher::{inout::InOutBuf, Iv, Key, KeyInit, KeyIvInit, KeySizeUser, StreamCipher};
         use digest::Mac;
+        use generic_array::sequence::Concat;
+        use generic_array::typenum::{Sum, U2};
+        use generic_array::ArrayLength;
         use generic_array::{sequence::Split, GenericArray};
         use rusty_paseto::core::PasetoError;
         use subtle::ConstantTimeEq;
@@ -424,8 +428,9 @@ mod pie {
             D1: Mac + KeyInit,
             D2: Mac + KeyInit,
             C: StreamCipher + KeyIvInit,
-            GenericArray<u8, D1::OutputSize>:
-                Split<u8, <C as KeySizeUser>::KeySize, First = Key<C>, Second = Iv<C>>,
+            D1::OutputSize: Sub<<C as KeySizeUser>::KeySize, Output = C::IvSize>,
+            D2::OutputSize: Add<U2>,
+            Sum<D2::OutputSize, U2>: ArrayLength<u8>,
         {
             // step 1: Enforce Algorithm Lucidity
             // asserted by the caller.
@@ -446,23 +451,43 @@ mod pie {
             let ak = derive_ak.finalize().into_bytes();
 
             // step 5: Encrypt the plaintext key `ptk` with `Ek` and `n2` to obtain the wrapped key `c`
-            let mut c = vec![0; ptk.len()];
             let mut chacha = C::new(&ek, &n2);
-            chacha.apply_keystream_inout(InOutBuf::new(ptk, &mut c).unwrap());
+            // a bit out of order, we stream the cipher into the MAC/base64 encoding
 
             // step 6: Calculate the authentication tag `t`
             let mut derive_tag = <D2 as Mac>::new_from_slice(&ak[..32]).unwrap();
             derive_tag.update(h.as_bytes());
             derive_tag.update(n.as_ref());
-            derive_tag.update(&c);
-            let t = derive_tag.finalize().into_bytes();
 
             // step 7: Return base64url(t || n || c)
             let mut enc = EncoderStringWriter::from(h.to_owned(), URL_SAFE_NO_PAD);
-            enc.write_all(&t).unwrap();
+            // write temporary tag which we will fill in later
+            enc.write_all(&GenericArray::<u8, D2::OutputSize>::default())
+                .unwrap();
             enc.write_all(n.as_ref()).unwrap();
-            enc.write_all(&c).unwrap();
-            enc.into_inner()
+
+            for slice in ptk.chunks(64) {
+                let mut c = [0; 64];
+                chacha.apply_keystream_inout(InOutBuf::new(slice, &mut c[..slice.len()]).unwrap());
+
+                derive_tag.update(&c[..slice.len()]);
+                enc.write_all(&c[..slice.len()]).unwrap();
+            }
+
+            let t = derive_tag.finalize().into_bytes();
+
+            // pad the tag with 2 extra bytes so we definitely fill a base64 quad
+            let extra = GenericArray::<u8, U2>::from_slice(&n.as_ref()[..2]);
+            let te = t.concat(*extra);
+
+            // encode the tag
+            let mut b64t = [0; 96];
+            let b64t = Base64UrlUnpadded::encode(&te, &mut b64t).unwrap();
+            let full_len = te.len() / 3 * 4;
+
+            let mut output = enc.into_inner();
+            output.replace_range(h.len()..h.len() + full_len, &b64t[..full_len]);
+            output
         }
 
         /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-decryption>

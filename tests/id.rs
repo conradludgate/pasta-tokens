@@ -1,3 +1,4 @@
+use base64::decode_config;
 use rusty_paserk::id::EncodeId;
 use rusty_paseto::core::{
     Key, Local, PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, PasetoSymmetricKey, Public,
@@ -66,6 +67,30 @@ fn local_v4() {
 }
 
 #[test]
+fn public_v1() {
+    let test_file: TestFile =
+        serde_json::from_str(include_str!("test-vectors/k1.pid.json")).unwrap();
+
+    for test in test_file.tests {
+        if let Some(paserk) = test.paserk {
+            let key = test
+                .key
+                .trim_start_matches("-----BEGIN PUBLIC KEY-----\n")
+                .trim_end_matches("\n-----END PUBLIC KEY-----");
+            let key = decode_config(&key.replace('\n', ""), base64::STANDARD).unwrap();
+            let key = PasetoAsymmetricPublicKey::<V1, Public>::from(key.as_slice());
+            let kid = key.encode_id();
+
+            assert_eq!(
+                kid, paserk,
+                "{} > {}: kid failed",
+                test_file.name, test.name
+            )
+        }
+    }
+}
+
+#[test]
 fn public_v2() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k2.pid.json")).unwrap();
@@ -117,6 +142,30 @@ fn public_v4() {
             let key = hex::decode(test.key).unwrap();
             let key = Key::from(&*key);
             let key = PasetoAsymmetricPublicKey::<V4, Public>::from(&key);
+            let kid = key.encode_id();
+
+            assert_eq!(
+                kid, paserk,
+                "{} > {}: kid failed",
+                test_file.name, test.name
+            )
+        }
+    }
+}
+
+#[test]
+fn secret_v1() {
+    let test_file: TestFile =
+        serde_json::from_str(include_str!("test-vectors/k1.sid.json")).unwrap();
+
+    for test in test_file.tests {
+        if let Some(paserk) = test.paserk {
+            let key = test
+                .key
+                .trim_start_matches("-----BEGIN RSA PRIVATE KEY-----\n")
+                .trim_end_matches("\n-----END RSA PRIVATE KEY-----");
+            let key = decode_config(&key.replace('\n', ""), base64::STANDARD).unwrap();
+            let key = PasetoAsymmetricPrivateKey::<V1, Public>::from(key.as_slice());
             let kid = key.encode_id();
 
             assert_eq!(
