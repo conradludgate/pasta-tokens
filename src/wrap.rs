@@ -23,162 +23,6 @@ use subtle::ConstantTimeEq;
 
 use crate::key::{write_b64, Key, KeyType, LocalKey, SecretKey, Version};
 
-pub trait WrapType<V: PieVersion>: KeyType<V> {
-    const WRAP_HEADER: &'static str;
-
-    type TotalLen: ArrayLength<u8>;
-    #[allow(clippy::type_complexity)]
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        digest::Output<V::TagMac>,
-        GenericArray<u8, U32>,
-        GenericArray<u8, Self::KeyLen>,
-    );
-    fn into_total(
-        tag: &digest::Output<V::TagMac>,
-        nonce: &GenericArray<u8, U32>,
-        wrapped_key: &GenericArray<u8, Self::KeyLen>,
-    ) -> GenericArray<u8, Self::TotalLen>;
-}
-
-impl WrapType<V3> for LocalKey {
-    const WRAP_HEADER: &'static str = "local-wrap.";
-
-    // 32 + 48 + 32 = 112
-    type TotalLen = generic_array::typenum::U112;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        digest::Output<<V3 as PieVersion>::TagMac>,
-        GenericArray<u8, U32>,
-        GenericArray<u8, Self::KeyLen>,
-    ) {
-        let (tag, rest) = total.split();
-        let (nonce, c) = rest.split();
-        (tag, nonce, c)
-    }
-    fn into_total(
-        tag: &digest::Output<<V3 as PieVersion>::TagMac>,
-        nonce: &GenericArray<u8, U32>,
-        wrapped_key: &GenericArray<u8, Self::KeyLen>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        tag.concat(*nonce).concat(*wrapped_key)
-    }
-}
-
-impl WrapType<V3> for SecretKey {
-    const WRAP_HEADER: &'static str = "secret-wrap.";
-
-    // 32 + 48 + 48 = 128
-    type TotalLen = generic_array::typenum::U128;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        digest::Output<<V3 as PieVersion>::TagMac>,
-        GenericArray<u8, U32>,
-        GenericArray<u8, Self::KeyLen>,
-    ) {
-        let (tag, rest) = total.split();
-        let (nonce, c) = rest.split();
-        (tag, nonce, c)
-    }
-    fn into_total(
-        tag: &digest::Output<<V3 as PieVersion>::TagMac>,
-        nonce: &GenericArray<u8, U32>,
-        wrapped_key: &GenericArray<u8, Self::KeyLen>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        tag.concat(*nonce).concat(*wrapped_key)
-    }
-}
-
-impl WrapType<V4> for LocalKey {
-    const WRAP_HEADER: &'static str = "local-wrap.";
-
-    // 32 + 32 + 32 = 96
-    type TotalLen = generic_array::typenum::U96;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        digest::Output<<V4 as PieVersion>::TagMac>,
-        GenericArray<u8, U32>,
-        GenericArray<u8, Self::KeyLen>,
-    ) {
-        let (tag, rest) = total.split();
-        let (nonce, c) = rest.split();
-        (tag, nonce, c)
-    }
-    fn into_total(
-        tag: &digest::Output<<V4 as PieVersion>::TagMac>,
-        nonce: &GenericArray<u8, U32>,
-        wrapped_key: &GenericArray<u8, Self::KeyLen>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        tag.concat(*nonce).concat(*wrapped_key)
-    }
-}
-
-impl WrapType<V4> for SecretKey {
-    const WRAP_HEADER: &'static str = "secret-wrap.";
-
-    // 32 + 32 + 64 = 128
-    type TotalLen = generic_array::typenum::U128;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        digest::Output<<V4 as PieVersion>::TagMac>,
-        GenericArray<u8, U32>,
-        GenericArray<u8, Self::KeyLen>,
-    ) {
-        let (tag, rest) = total.split();
-        let (nonce, c) = rest.split();
-        (tag, nonce, c)
-    }
-    fn into_total(
-        tag: &digest::Output<<V4 as PieVersion>::TagMac>,
-        nonce: &GenericArray<u8, U32>,
-        wrapped_key: &GenericArray<u8, Self::KeyLen>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        tag.concat(*nonce).concat(*wrapped_key)
-    }
-}
-
-pub trait PieVersion: Version {
-    type Cipher: StreamCipher + KeyIvInit;
-    type AuthKeyMac: Mac + KeyInit;
-    type EncKeyMac: Mac + KeyInit;
-    type TagMac: Mac + KeyInit;
-
-    fn split_enc_key(
-        ek: digest::Output<Self::EncKeyMac>,
-    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>);
-}
-
-impl PieVersion for V3 {
-    type Cipher = ctr::Ctr64BE<aes::Aes256>;
-    type AuthKeyMac = hmac::Hmac<sha2::Sha384>;
-    type EncKeyMac = hmac::Hmac<sha2::Sha384>;
-    type TagMac = hmac::Hmac<sha2::Sha384>;
-
-    fn split_enc_key(
-        ek: digest::Output<Self::EncKeyMac>,
-    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
-        ek.split()
-    }
-}
-
-impl PieVersion for V4 {
-    type Cipher = chacha20::XChaCha20;
-    type AuthKeyMac = blake2::Blake2bMac<U32>;
-    type EncKeyMac = blake2::Blake2bMac<generic_array::typenum::U56>;
-    type TagMac = blake2::Blake2bMac<U32>;
-
-    fn split_enc_key(
-        ek: digest::Output<Self::EncKeyMac>,
-    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
-        ek.split()
-    }
-}
-
 /// Paragon Initiative Enterprises standard key-wrapping
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
 ///
@@ -445,5 +289,161 @@ impl<V: PieVersion, K: WrapType<V>> fmt::Display for PieWrappedKey<V, K> {
 
         let total = K::into_total(&self.tag, &self.nonce, &self.wrapped_key);
         write_b64(&total, f)
+    }
+}
+
+pub trait PieVersion: Version {
+    type Cipher: StreamCipher + KeyIvInit;
+    type AuthKeyMac: Mac + KeyInit;
+    type EncKeyMac: Mac + KeyInit;
+    type TagMac: Mac + KeyInit;
+
+    fn split_enc_key(
+        ek: digest::Output<Self::EncKeyMac>,
+    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>);
+}
+
+impl PieVersion for V3 {
+    type Cipher = ctr::Ctr64BE<aes::Aes256>;
+    type AuthKeyMac = hmac::Hmac<sha2::Sha384>;
+    type EncKeyMac = hmac::Hmac<sha2::Sha384>;
+    type TagMac = hmac::Hmac<sha2::Sha384>;
+
+    fn split_enc_key(
+        ek: digest::Output<Self::EncKeyMac>,
+    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
+        ek.split()
+    }
+}
+
+impl PieVersion for V4 {
+    type Cipher = chacha20::XChaCha20;
+    type AuthKeyMac = blake2::Blake2bMac<U32>;
+    type EncKeyMac = blake2::Blake2bMac<generic_array::typenum::U56>;
+    type TagMac = blake2::Blake2bMac<U32>;
+
+    fn split_enc_key(
+        ek: digest::Output<Self::EncKeyMac>,
+    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
+        ek.split()
+    }
+}
+
+pub trait WrapType<V: PieVersion>: KeyType<V> {
+    const WRAP_HEADER: &'static str;
+
+    type TotalLen: ArrayLength<u8>;
+    #[allow(clippy::type_complexity)]
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<V::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    );
+    fn into_total(
+        tag: &digest::Output<V::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen>;
+}
+
+impl WrapType<V3> for LocalKey {
+    const WRAP_HEADER: &'static str = "local-wrap.";
+
+    // 32 + 48 + 32 = 112
+    type TotalLen = generic_array::typenum::U112;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V3 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V3 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+impl WrapType<V3> for SecretKey {
+    const WRAP_HEADER: &'static str = "secret-wrap.";
+
+    // 32 + 48 + 48 = 128
+    type TotalLen = generic_array::typenum::U128;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V3 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V3 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+impl WrapType<V4> for LocalKey {
+    const WRAP_HEADER: &'static str = "local-wrap.";
+
+    // 32 + 32 + 32 = 96
+    type TotalLen = generic_array::typenum::U96;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V4 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V4 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+impl WrapType<V4> for SecretKey {
+    const WRAP_HEADER: &'static str = "secret-wrap.";
+
+    // 32 + 32 + 64 = 128
+    type TotalLen = generic_array::typenum::U128;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V4 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V4 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
     }
 }

@@ -3,221 +3,206 @@
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/PKE.md>
 
-use std::io::Write;
+use std::{fmt, str::FromStr};
 
-use base64::{write::EncoderStringWriter, URL_SAFE_NO_PAD};
+use base64::URL_SAFE_NO_PAD;
 use blake2::{Blake2b, Blake2bMac, Digest};
 use chacha20::XChaCha20;
 use cipher::{inout::InOutBuf, KeyIvInit, StreamCipher};
 use digest::Mac;
-use generic_array::typenum::{U24, U32};
-use rand::rngs::OsRng;
-use rusty_paseto::core::{
-    Key, Local, PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, PasetoError,
-    PasetoSymmetricKey, Public,
+use generic_array::{
+    sequence::{Concat, Split},
+    typenum::{U24, U32, U96},
+    ArrayLength, GenericArray,
 };
+use rand::rngs::OsRng;
+use rusty_paseto::core::PasetoError;
 use sha2::Sha512;
 use subtle::ConstantTimeEq;
 
-// #[cfg(feature = "v1")]
-// use rusty_paseto::core::V1;
-#[cfg(feature = "v2")]
-use rusty_paseto::core::V2;
 // #[cfg(feature = "v3")]
 // use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
 
-pub trait Seal {
-    type Version;
+use crate::key::{write_b64, Key, LocalKey, PublicKey, SecretKey, Version};
 
-    fn seal(&self, ptk: &PasetoSymmetricKey<Self::Version, Local>) -> String;
+pub struct SealedKey<V: SealedVersion> {
+    tag: GenericArray<u8, V::TagLen>,
+    ephemeral_public_key: GenericArray<u8, V::EpkLen>,
+    encrypted_data_key: GenericArray<u8, V::Local>,
 }
 
-pub trait Unseal {
-    type Version;
+#[cfg(feature = "v4")]
+impl Key<V4, LocalKey> {
+    pub fn seal(&self, sealing_key: &Key<V4, PublicKey>) -> SealedKey<V4> {
+        // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
+        let pk = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(sealing_key.as_ref())
+            .unwrap();
 
-    fn unseal(&self, key: &str) -> Result<PasetoSymmetricKey<Self::Version, Local>, PasetoError>;
-}
+        // step 1: Calculate the birationally-equivalent X25519 public key (xpk) from pk.
+        // I wish the edwards point/montgomery point types were exposed by x/ed25519 libraries
+        let xpk: x25519_dalek::PublicKey = pk.decompress().unwrap().to_montgomery().0.into();
 
-#[cfg(feature = "v2")]
-impl Seal for PasetoAsymmetricPublicKey<'_, V2, Public> {
-    type Version = V2;
+        let esk = x25519_dalek::EphemeralSecret::random_from_rng(OsRng);
+        let epk = x25519_dalek::PublicKey::from(&esk);
 
-    fn seal(&self, ptk: &PasetoSymmetricKey<Self::Version, Local>) -> String {
-        let h = "k2.seal.";
-        seal(
-            h,
-            self.as_ref()
-                .try_into()
-                .expect("V2 public keys are 32 bytes"),
-            ptk.as_ref()
-                .try_into()
-                .expect("V2 symmetric keys are 32 bytes"),
-        )
-    }
-}
+        let xk = esk.diffie_hellman(&xpk);
 
-#[cfg(feature = "v2")]
-impl Unseal for PasetoAsymmetricPrivateKey<'_, V2, Public> {
-    type Version = V2;
+        let ek = Blake2b::<U32>::new()
+            .chain_update([0x01])
+            .chain_update(V4::KEY_HEADER)
+            .chain_update("seal.")
+            .chain_update(xk.as_bytes())
+            .chain_update(epk.as_bytes())
+            .chain_update(xpk.as_bytes())
+            .finalize();
 
-    fn unseal(&self, key: &str) -> Result<PasetoSymmetricKey<Self::Version, Local>, PasetoError> {
-        let h = "k2.seal.";
-        unseal(
-            h,
-            self.as_ref()
-                .try_into()
-                .expect("V2 secret keys are 64 bytes"),
-            key,
-        )
-        .map(PasetoSymmetricKey::from)
+        let ak = Blake2b::<U32>::new()
+            .chain_update([0x02])
+            .chain_update(V4::KEY_HEADER)
+            .chain_update("seal.")
+            .chain_update(xk.as_bytes())
+            .chain_update(epk.as_bytes())
+            .chain_update(xpk.as_bytes())
+            .finalize();
+
+        let n = Blake2b::<U24>::new()
+            .chain_update(epk.as_bytes())
+            .chain_update(xpk.as_bytes())
+            .finalize();
+
+        let mut edk = GenericArray::<u8, <V4 as Version>::Local>::default();
+        XChaCha20::new(&ek, &n)
+            .apply_keystream_inout(InOutBuf::new(self.as_ref(), &mut edk).unwrap());
+
+        let tag = Blake2bMac::<U32>::new_from_slice(&ak)
+            .unwrap()
+            .chain_update(V4::KEY_HEADER)
+            .chain_update("seal.")
+            .chain_update(epk.as_bytes())
+            .chain_update(edk)
+            .finalize()
+            .into_bytes();
+
+        SealedKey {
+            tag,
+            ephemeral_public_key: epk.to_bytes().into(),
+            encrypted_data_key: edk,
+        }
     }
 }
 
 #[cfg(feature = "v4")]
-impl Seal for PasetoAsymmetricPublicKey<'_, V4, Public> {
-    type Version = V4;
+impl SealedKey<V4> {
+    pub fn unseal(
+        mut self,
+        unsealing_key: &Key<V4, SecretKey>,
+    ) -> Result<Key<V4, LocalKey>, PasetoError> {
+        let epk: [u8; 32] = self.ephemeral_public_key.into();
+        let epk = x25519_dalek::PublicKey::from(epk);
 
-    fn seal(&self, ptk: &PasetoSymmetricKey<Self::Version, Local>) -> String {
-        let h = "k4.seal.";
-        seal(
-            h,
-            self.as_ref()
-                .try_into()
-                .expect("V4 public keys are 32 bytes"),
-            ptk.as_ref()
-                .try_into()
-                .expect("V4 symmetric keys are 32 bytes"),
-        )
+        // expand sk
+        let xsk = Sha512::default()
+            .chain_update(&unsealing_key.as_ref()[..32])
+            .finalize()[..32]
+            .try_into()
+            .unwrap();
+        let xsk = curve25519_dalek::Scalar::from_bits_clamped(xsk);
+        let xsk = x25519_dalek::StaticSecret::from(xsk.to_bytes());
+        let xpk: x25519_dalek::PublicKey = (&xsk).into();
+
+        let xk = xsk.diffie_hellman(&epk);
+
+        let ak = Blake2b::<U32>::new()
+            .chain_update([0x02])
+            .chain_update(V4::KEY_HEADER)
+            .chain_update("seal.")
+            .chain_update(xk.as_bytes())
+            .chain_update(epk.as_bytes())
+            .chain_update(xpk.as_bytes())
+            .finalize();
+
+        let t2 = Blake2bMac::<U32>::new_from_slice(&ak)
+            .unwrap()
+            .chain_update(V4::KEY_HEADER)
+            .chain_update("seal.")
+            .chain_update(epk.as_bytes())
+            .chain_update(self.encrypted_data_key)
+            .finalize()
+            .into_bytes();
+
+        // step 6: Compare t2 with t, using a constant-time compare function. If it does not match, abort.
+        if self.tag.ct_ne(&t2).into() {
+            return Err(PasetoError::InvalidSignature);
+        }
+
+        let ek = Blake2b::<U32>::new()
+            .chain_update([0x01])
+            .chain_update(V4::KEY_HEADER)
+            .chain_update("seal.")
+            .chain_update(xk.as_bytes())
+            .chain_update(epk.as_bytes())
+            .chain_update(xpk.as_bytes())
+            .finalize();
+
+        let n = Blake2b::<U24>::new()
+            .chain_update(epk.as_bytes())
+            .chain_update(xpk.as_bytes())
+            .finalize();
+
+        XChaCha20::new(&ek, &n).apply_keystream(&mut self.encrypted_data_key);
+        Ok(self.encrypted_data_key.into())
     }
 }
 
-#[cfg(feature = "v4")]
-impl Unseal for PasetoAsymmetricPrivateKey<'_, V4, Public> {
-    type Version = V4;
+pub trait SealedVersion: Version {
+    type TagLen: ArrayLength<u8>;
+    type EpkLen: ArrayLength<u8>;
+}
 
-    fn unseal(&self, key: &str) -> Result<PasetoSymmetricKey<Self::Version, Local>, PasetoError> {
-        let h = "k4.seal.";
-        unseal(
-            h,
-            self.as_ref()
-                .try_into()
-                .expect("V4 secret keys are 64 bytes"),
-            key,
-        )
-        .map(PasetoSymmetricKey::from)
+impl SealedVersion for V4 {
+    type TagLen = U32;
+    type EpkLen = U32;
+}
+
+impl FromStr for SealedKey<V4> {
+    type Err = PasetoError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s
+            .strip_prefix(V4::KEY_HEADER)
+            .ok_or(PasetoError::WrongHeader)?;
+        let s = s.strip_prefix("seal.").ok_or(PasetoError::WrongHeader)?;
+
+        let mut total = GenericArray::<u8, U96>::default();
+        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut total)?;
+        if len != 96 {
+            return Err(PasetoError::PayloadBase64Decode {
+                source: base64::DecodeError::InvalidLength,
+            });
+        }
+
+        let (tag, rest) = total.split();
+        let (ephemeral_public_key, encrypted_data_key) = rest.split();
+
+        Ok(Self {
+            tag,
+            ephemeral_public_key,
+            encrypted_data_key,
+        })
     }
 }
 
-fn seal(h: &str, pk: [u8; 32], ptk: [u8; 32]) -> String {
-    // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
-    let pk = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(&pk).unwrap();
+impl fmt::Display for SealedKey<V4> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(V4::KEY_HEADER)?;
+        f.write_str("seal.")?;
 
-    // step 1: Calculate the birationally-equivalent X25519 public key (xpk) from pk.
-    // I wish the edwards point/montgomery point types were exposed by x/ed25519 libraries
-    let xpk: x25519_dalek::PublicKey = pk.decompress().unwrap().to_montgomery().0.into();
-
-    let esk = x25519_dalek::EphemeralSecret::random_from_rng(OsRng);
-    let epk = x25519_dalek::PublicKey::from(&esk);
-
-    let xk = esk.diffie_hellman(&xpk);
-
-    let ek = Blake2b::<U32>::new()
-        .chain_update([0x01])
-        .chain_update(h.as_bytes())
-        .chain_update(xk.as_bytes())
-        .chain_update(epk.as_bytes())
-        .chain_update(xpk.as_bytes())
-        .finalize();
-
-    let ak = Blake2b::<U32>::new()
-        .chain_update([0x02])
-        .chain_update(h.as_bytes())
-        .chain_update(xk.as_bytes())
-        .chain_update(epk.as_bytes())
-        .chain_update(xpk.as_bytes())
-        .finalize();
-
-    let n = Blake2b::<U24>::new()
-        .chain_update(epk.as_bytes())
-        .chain_update(xpk.as_bytes())
-        .finalize();
-
-    let mut edk = [0; 32];
-    XChaCha20::new(&ek, &n).apply_keystream_inout(InOutBuf::new(ptk.as_ref(), &mut edk).unwrap());
-
-    let tag = Blake2bMac::<U32>::new_from_slice(&ak)
-        .unwrap()
-        .chain_update(h.as_bytes())
-        .chain_update(epk.as_bytes())
-        .chain_update(edk)
-        .finalize()
-        .into_bytes();
-
-    let mut enc = EncoderStringWriter::from(h.to_owned(), URL_SAFE_NO_PAD);
-    enc.write_all(&tag).unwrap();
-    enc.write_all(epk.as_bytes()).unwrap();
-    enc.write_all(&edk).unwrap();
-    enc.into_inner()
-}
-
-fn unseal(h: &str, sk: &[u8; 64], wk: &str) -> Result<Key<32>, PasetoError> {
-    let b = wk.strip_prefix(h).ok_or(PasetoError::WrongHeader)?;
-    let mut output = [0; 96];
-    base64::decode_config_slice(b, base64::URL_SAFE_NO_PAD, &mut output)?;
-    let (t, b) = output.split_at(32);
-    let (epk, edk) = b.split_at(32);
-
-    let epk: [u8; 32] = epk.try_into().unwrap();
-    let epk = x25519_dalek::PublicKey::from(epk);
-
-    // expand sk
-    let xsk = Sha512::default().chain_update(&sk[..32]).finalize()[..32]
-        .try_into()
-        .unwrap();
-    let xsk = curve25519_dalek::Scalar::from_bits_clamped(xsk);
-    let xsk = x25519_dalek::StaticSecret::from(xsk.to_bytes());
-    let xpk: x25519_dalek::PublicKey = (&xsk).into();
-
-    let xk = xsk.diffie_hellman(&epk);
-
-    let ak = Blake2b::<U32>::new()
-        .chain_update([0x02])
-        .chain_update(h.as_bytes())
-        .chain_update(xk.as_bytes())
-        .chain_update(epk.as_bytes())
-        .chain_update(xpk.as_bytes())
-        .finalize();
-
-    let t2 = Blake2bMac::<U32>::new_from_slice(&ak)
-        .unwrap()
-        .chain_update(h.as_bytes())
-        .chain_update(epk.as_bytes())
-        .chain_update(edk)
-        .finalize()
-        .into_bytes();
-
-    // step 6: Compare t2 with t, using a constant-time compare function. If it does not match, abort.
-    if t.ct_ne(&t2).into() {
-        return Err(PasetoError::InvalidSignature);
+        let total = self
+            .tag
+            .concat(self.ephemeral_public_key)
+            .concat(self.encrypted_data_key);
+        write_b64(&total, f)
     }
-
-    let ek = Blake2b::<U32>::new()
-        .chain_update([0x01])
-        .chain_update(h.as_bytes())
-        .chain_update(xk.as_bytes())
-        .chain_update(epk.as_bytes())
-        .chain_update(xpk.as_bytes())
-        .finalize();
-
-    let n = Blake2b::<U24>::new()
-        .chain_update(epk.as_bytes())
-        .chain_update(xpk.as_bytes())
-        .finalize();
-
-    let mut pdk = [0; 32];
-    XChaCha20::new(&ek, &n).apply_keystream_inout(InOutBuf::new(edk, &mut pdk).unwrap());
-
-    Ok(rusty_paseto::core::Key::from(pdk))
 }
