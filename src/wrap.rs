@@ -2,454 +2,448 @@
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap.md>
 
-use rusty_paseto::core::{Key, Local, PasetoError, PasetoSymmetricKey};
+use std::{fmt, str::FromStr};
+
+use base64::URL_SAFE_NO_PAD;
+use cipher::{KeyInit, KeyIvInit, StreamCipher, Unsigned};
+use digest::{Mac, OutputSizeUser};
+use generic_array::{
+    sequence::{Concat, Split},
+    typenum::U32,
+    ArrayLength, GenericArray,
+};
+use rand::{rngs::OsRng, RngCore};
+use rusty_paseto::core::PasetoError;
 
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
+use subtle::ConstantTimeEq;
+
+use crate::key::{write_b64, Key, KeyType, LocalKey, SecretKey, Version};
+
+pub trait WrapType<V: PieVersion>: KeyType<V> {
+    const WRAP_HEADER: &'static str;
+
+    type TotalLen: ArrayLength<u8>;
+    #[allow(clippy::type_complexity)]
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<V::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    );
+    fn into_total(
+        tag: &digest::Output<V::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen>;
+}
+
+impl WrapType<V3> for LocalKey {
+    const WRAP_HEADER: &'static str = "local-wrap.";
+
+    // 32 + 48 + 32 = 112
+    type TotalLen = generic_array::typenum::U112;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V3 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V3 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+impl WrapType<V3> for SecretKey {
+    const WRAP_HEADER: &'static str = "secret-wrap.";
+
+    // 32 + 48 + 48 = 128
+    type TotalLen = generic_array::typenum::U128;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V3 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V3 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+impl WrapType<V4> for LocalKey {
+    const WRAP_HEADER: &'static str = "local-wrap.";
+
+    // 32 + 32 + 32 = 96
+    type TotalLen = generic_array::typenum::U96;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V4 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V4 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+impl WrapType<V4> for SecretKey {
+    const WRAP_HEADER: &'static str = "secret-wrap.";
+
+    // 32 + 32 + 64 = 128
+    type TotalLen = generic_array::typenum::U128;
+    fn split_total(
+        total: GenericArray<u8, Self::TotalLen>,
+    ) -> (
+        digest::Output<<V4 as PieVersion>::TagMac>,
+        GenericArray<u8, U32>,
+        GenericArray<u8, Self::KeyLen>,
+    ) {
+        let (tag, rest) = total.split();
+        let (nonce, c) = rest.split();
+        (tag, nonce, c)
+    }
+    fn into_total(
+        tag: &digest::Output<<V4 as PieVersion>::TagMac>,
+        nonce: &GenericArray<u8, U32>,
+        wrapped_key: &GenericArray<u8, Self::KeyLen>,
+    ) -> GenericArray<u8, Self::TotalLen> {
+        tag.concat(*nonce).concat(*wrapped_key)
+    }
+}
+
+pub trait PieVersion: Version {
+    type Cipher: StreamCipher + KeyIvInit;
+    type AuthKeyMac: Mac + KeyInit;
+    type EncKeyMac: Mac + KeyInit;
+    type TagMac: Mac + KeyInit;
+
+    fn split_enc_key(
+        ek: digest::Output<Self::EncKeyMac>,
+    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>);
+}
+
+impl PieVersion for V3 {
+    type Cipher = ctr::Ctr64BE<aes::Aes256>;
+    type AuthKeyMac = hmac::Hmac<sha2::Sha384>;
+    type EncKeyMac = hmac::Hmac<sha2::Sha384>;
+    type TagMac = hmac::Hmac<sha2::Sha384>;
+
+    fn split_enc_key(
+        ek: digest::Output<Self::EncKeyMac>,
+    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
+        ek.split()
+    }
+}
+
+impl PieVersion for V4 {
+    type Cipher = chacha20::XChaCha20;
+    type AuthKeyMac = blake2::Blake2bMac<U32>;
+    type EncKeyMac = blake2::Blake2bMac<generic_array::typenum::U56>;
+    type TagMac = blake2::Blake2bMac<U32>;
+
+    fn split_enc_key(
+        ek: digest::Output<Self::EncKeyMac>,
+    ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
+        ek.split()
+    }
+}
 
 /// Paragon Initiative Enterprises standard key-wrapping
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
 ///
 /// # Local Wrapping
 /// ```
-/// use rusty_paserk::wrap::{Pie, LocalWrapperExt};
-/// use rusty_paseto::core::{PasetoSymmetricKey, V4, Local, Key};
+/// use rusty_paserk::wrap::PieWrappedKey;
+/// use rusty_paserk::key::{Key, LocalKey};
+/// use rusty_paseto::core::V4;
 ///
-/// let wrapping_key = PasetoSymmetricKey::<V4, Local>::from(Key::try_new_random().unwrap());
+/// let wrapping_key = Key::<V4, LocalKey>::new_random();
 ///
-/// let local_key = PasetoSymmetricKey::from(Key::try_new_random().unwrap());
-/// let nonce = Key::try_new_random().unwrap();
+/// let local_key = Key::<V4, LocalKey>::new_random();
 ///
-/// let wrapped_local = Pie::wrap_local(&local_key, &wrapping_key, &nonce);
+/// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
 /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
 ///
-/// let mut wrapped_local = wrapped_local.into_bytes();
-/// let local_key2 = Pie::unwrap_local(&mut wrapped_local, &wrapping_key).unwrap();
-/// assert_eq!(local_key.as_ref(), local_key2.as_ref());
+/// let wrapped_local: PieWrappedKey<V4, LocalKey> = wrapped_local.parse().unwrap();
+/// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+/// assert_eq!(local_key, local_key2);
 /// ```
 ///
 /// # Secret Wrapping
 /// ```
-/// use rusty_paserk::wrap::{Pie, SecretWrapperExt};
-/// use rusty_paseto::core::{PasetoSymmetricKey, PasetoAsymmetricPrivateKey, V4, Public, Key};
+/// use rusty_paserk::wrap::PieWrappedKey;
+/// use rusty_paserk::key::{Key, LocalKey, SecretKey};
+/// use rusty_paseto::core::V4;
 ///
-/// let wrapping_key = PasetoSymmetricKey::from(Key::try_new_random().unwrap());
+/// let wrapping_key = Key::<V4, LocalKey>::new_random();
 ///
-/// let secret_key = Key::try_new_random().unwrap();
-/// let secret_key = PasetoAsymmetricPrivateKey::<V4, Public>::from(&secret_key);
-/// let nonce = Key::try_new_random().unwrap();
+/// let secret_key = Key::<V4, SecretKey>::new_random();
 ///
-/// let wrapped_secret = Pie::wrap_secret(&secret_key, &wrapping_key, &nonce);
+/// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
 /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
 ///
-/// let mut wrapped_secret = wrapped_secret.into_bytes();
-/// let secret_key2 = Pie::unwrap_secret(&mut wrapped_secret, &wrapping_key).unwrap();
-/// assert_eq!(secret_key.as_ref(), secret_key2.as_ref());
+/// let wrapped_secret: PieWrappedKey<V4, SecretKey> = wrapped_secret.parse().unwrap();
+/// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
+/// assert_eq!(secret_key, secret_key2);
 /// ```
-pub struct Pie;
+pub struct PieWrappedKey<V: PieVersion, K: KeyType<V>> {
+    tag: GenericArray<u8, <V::TagMac as OutputSizeUser>::OutputSize>,
+    nonce: GenericArray<u8, U32>,
+    wrapped_key: GenericArray<u8, K::KeyLen>,
+}
 
-mod local {
-    use super::*;
+impl<V: PieVersion, K: WrapType<V>> Key<V, K> {
+    /// Paragon Initiative Enterprises standard key-wrapping
+    /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
+    ///
+    /// # Local Wrapping
+    /// ```
+    /// use rusty_paserk::wrap::PieWrappedKey;
+    /// use rusty_paserk::key::{Key, LocalKey};
+    /// use rusty_paseto::core::V4;
+    ///
+    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    ///
+    /// let local_key = Key::<V4, LocalKey>::new_random();
+    ///
+    /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
+    /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
+    ///
+    /// let wrapped_local: PieWrappedKey<V4, LocalKey> = wrapped_local.parse().unwrap();
+    /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+    /// assert_eq!(local_key, local_key2);
+    /// ```
+    ///
+    /// # Secret Wrapping
+    /// ```
+    /// use rusty_paserk::wrap::PieWrappedKey;
+    /// use rusty_paserk::key::{Key, LocalKey, SecretKey};
+    /// use rusty_paseto::core::V4;
+    ///
+    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    ///
+    /// let secret_key = Key::<V4, SecretKey>::new_random();
+    ///
+    /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
+    /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
+    ///
+    /// let wrapped_secret: PieWrappedKey<V4, SecretKey> = wrapped_secret.parse().unwrap();
+    /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
+    /// assert_eq!(secret_key, secret_key2);
+    /// ```
+    pub fn wrap_pie(&self, wrapping_key: &Key<V, LocalKey>) -> PieWrappedKey<V, K> {
+        // step 1: Enforce Algorithm Lucidity
+        // asserted by the caller.
 
-    pub trait LocalWrapperExt<Version> {
-        fn wrap_local(
-            ptk: &PasetoSymmetricKey<Version, Local>,
-            wk: &PasetoSymmetricKey<Version, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String;
+        // step 2: Generate a 256 bit (32 bytes) random nonce, n.
+        let mut n = GenericArray::<u8, U32>::default();
+        OsRng.fill_bytes(&mut n);
 
-        fn unwrap_local(
-            wpk: &mut [u8],
-            wk: &PasetoSymmetricKey<Version, Local>,
-        ) -> Result<PasetoSymmetricKey<Version, Local>, PasetoError>;
-    }
+        // step 3: Derive the encryption key `Ek` and XChaCha nonce `n2`
+        let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+            .unwrap()
+            .chain_update([0x80])
+            .chain_update(n)
+            .finalize()
+            .into_bytes();
+        let (ek, n2) = V::split_enc_key(ek);
 
-    #[cfg(feature = "v3")]
-    impl LocalWrapperExt<V3> for Pie {
-        fn wrap_local(
-            ptk: &PasetoSymmetricKey<V3, Local>,
-            wk: &PasetoSymmetricKey<V3, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k3.local-wrap.pie.";
-            pie::v3::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-        }
+        // step 4: Derive the authentication key `Ak`
+        let ak = <V::AuthKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+            .unwrap()
+            .chain_update([0x81])
+            .chain_update(n)
+            .finalize()
+            .into_bytes();
 
-        fn unwrap_local(
-            wpk: &mut [u8],
-            wk: &PasetoSymmetricKey<V3, Local>,
-        ) -> Result<PasetoSymmetricKey<V3, Local>, PasetoError> {
-            let header = "k3.local-wrap.pie.";
-            pie::v3::unwrap(header, wpk, wk.as_ref())
-                .and_then(|k| {
-                    if k.len() != 32 {
-                        Err(PasetoError::IncorrectSize)
-                    } else {
-                        Ok(k)
-                    }
-                })
-                .map(Key::from)
-                .map(PasetoSymmetricKey::from)
-        }
-    }
+        // step 5: Encrypt the plaintext key `ptk` with `Ek` and `n2` to obtain the wrapped key `c`
+        let mut cipher = <V::Cipher as KeyIvInit>::new(&ek, &n2);
+        let mut c = GenericArray::<u8, K::KeyLen>::default();
+        cipher.apply_keystream_b2b(self.as_ref(), &mut c).unwrap();
 
-    #[cfg(feature = "v4")]
-    impl LocalWrapperExt<V4> for Pie {
-        fn wrap_local(
-            ptk: &PasetoSymmetricKey<V4, Local>,
-            wk: &PasetoSymmetricKey<V4, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k4.local-wrap.pie.";
-            pie::v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-        }
+        // step 6: Calculate the authentication tag `t`
+        let tag = <V::TagMac as Mac>::new_from_slice(&ak[..32])
+            .unwrap()
+            .chain_update(V::KEY_HEADER)
+            .chain_update(K::WRAP_HEADER)
+            .chain_update("pie.")
+            .chain_update(n)
+            .chain_update(&c)
+            .finalize()
+            .into_bytes();
 
-        fn unwrap_local(
-            wpk: &mut [u8],
-            wk: &PasetoSymmetricKey<V4, Local>,
-        ) -> Result<PasetoSymmetricKey<V4, Local>, PasetoError> {
-            let header = "k4.local-wrap.pie.";
-            pie::v4::unwrap(header, wpk, wk.as_ref())
-                .and_then(|k| {
-                    if k.len() != 32 {
-                        Err(PasetoError::IncorrectSize)
-                    } else {
-                        Ok(k)
-                    }
-                })
-                .map(Key::from)
-                .map(PasetoSymmetricKey::from)
+        PieWrappedKey {
+            wrapped_key: c,
+            nonce: n,
+            tag,
         }
     }
 }
-pub use local::LocalWrapperExt;
 
-mod public {
-    use rusty_paseto::core::{PasetoAsymmetricPrivateKey, Public};
+impl<V, K> PieWrappedKey<V, K>
+where
+    K: WrapType<V>,
+    V: PieVersion,
+{
+    /// Paragon Initiative Enterprises standard key-wrapping
+    /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
+    ///
+    /// # Local Wrapping
+    /// ```
+    /// use rusty_paserk::wrap::PieWrappedKey;
+    /// use rusty_paserk::key::{Key, LocalKey};
+    /// use rusty_paseto::core::V4;
+    ///
+    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    ///
+    /// let local_key = Key::<V4, LocalKey>::new_random();
+    ///
+    /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
+    /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
+    ///
+    /// let wrapped_local: PieWrappedKey<V4, LocalKey> = wrapped_local.parse().unwrap();
+    /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+    /// assert_eq!(local_key, local_key2);
+    /// ```
+    ///
+    /// # Secret Wrapping
+    /// ```
+    /// use rusty_paserk::wrap::PieWrappedKey;
+    /// use rusty_paserk::key::{Key, LocalKey, SecretKey};
+    /// use rusty_paseto::core::V4;
+    ///
+    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    ///
+    /// let secret_key = Key::<V4, SecretKey>::new_random();
+    ///
+    /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
+    /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
+    ///
+    /// let wrapped_secret: PieWrappedKey<V4, SecretKey> = wrapped_secret.parse().unwrap();
+    /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
+    /// assert_eq!(secret_key, secret_key2);
+    /// ```
+    pub fn unwrap(self, wrapping_key: &Key<V, LocalKey>) -> Result<Key<V, K>, PasetoError> {
+        let Self {
+            mut wrapped_key,
+            nonce,
+            tag,
+            ..
+        } = self;
 
-    use super::*;
+        // step 2: Derive the authentication key `Ak`
+        let ak = <V::AuthKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+            .unwrap()
+            .chain_update([0x81])
+            .chain_update(nonce)
+            .finalize()
+            .into_bytes();
 
-    pub trait SecretWrapperExt<Version> {
-        fn wrap_secret(
-            ptk: &PasetoAsymmetricPrivateKey<Version, Public>,
-            wk: &PasetoSymmetricKey<Version, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String;
+        // step 3: Recalculate the authentication tag t2
+        let tag2 = <V::TagMac as Mac>::new_from_slice(&ak[..32])
+            .unwrap()
+            .chain_update(V::KEY_HEADER)
+            .chain_update(K::WRAP_HEADER)
+            .chain_update("pie.")
+            .chain_update(nonce)
+            .chain_update(&wrapped_key)
+            .finalize()
+            .into_bytes();
 
-        fn unwrap_secret<'wpk>(
-            wpk: &'wpk mut [u8],
-            wk: &PasetoSymmetricKey<Version, Local>,
-        ) -> Result<PasetoAsymmetricPrivateKey<'wpk, Version, Public>, PasetoError>;
-    }
-
-    // We can't support v3 because there's no way to return a type of `PasetoAsymmetricPrivateKey<'wpk, V3, Public>`
-
-    // #[cfg(feature = "v3")]
-    // impl SecretWrapperExt<V3> for Pie {
-    //     fn wrap_secret(
-    //         ptk: &PasetoAsymmetricPrivateKey<V3, Public>,
-    //         wk: &PasetoSymmetricKey<V3, Local>,
-    //         nonce: &Key<{ pie::NONCE_SIZE }>,
-    //     ) -> String {
-    //         let header = "k3.secret-wrap.pie.";
-    //         pie::v1_v3::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-    //     }
-
-    //     fn unwrap_secret<'wpk>(
-    //         wpk: &'wpk mut [u8],
-    //         wk: &PasetoSymmetricKey<V3, Local>,
-    //     ) -> Result<PasetoAsymmetricPrivateKey<'wpk, V3, Public>, PasetoError> {
-    //         let header = "k3.secret-wrap.pie.";
-    //         pie::v1_v3::unwrap(header, wpk, wk.as_ref())
-    //             .and_then(|k| {
-    //                 if k.len() != 48 {
-    //                     Err(PasetoError::IncorrectSize)
-    //                 } else {
-    //                     Ok(k)
-    //                 }
-    //             })
-    //             .map(Key::from)
-    //             .map(PasetoAsymmetricPrivateKey::from)
-    //     }
-    // }
-
-    #[cfg(feature = "v4")]
-    impl SecretWrapperExt<V4> for Pie {
-        fn wrap_secret(
-            ptk: &PasetoAsymmetricPrivateKey<V4, Public>,
-            wk: &PasetoSymmetricKey<V4, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k4.secret-wrap.pie.";
-            pie::v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
+        // step 4: Compare t with t2 in constant-time. If it doesn't match, abort.
+        if tag.ct_ne(&tag2).into() {
+            return Err(PasetoError::InvalidSignature);
         }
 
-        fn unwrap_secret<'wpk>(
-            wpk: &'wpk mut [u8],
-            wk: &PasetoSymmetricKey<V4, Local>,
-        ) -> Result<PasetoAsymmetricPrivateKey<'wpk, V4, Public>, PasetoError> {
-            let header = "k4.secret-wrap.pie.";
-            pie::v4::unwrap(header, wpk, wk.as_ref()).map(PasetoAsymmetricPrivateKey::from)
-        }
+        // step 5: Derive the encryption key `Ek` and XChaCha nonce `n2`
+        let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+            .unwrap()
+            .chain_update([0x80])
+            .chain_update(nonce)
+            .finalize()
+            .into_bytes();
+        let (ek, n2) = V::split_enc_key(ek);
+
+        // step 6: Decrypt the wrapped key `c` with `Ek` and `n2` to obtain the plaintext key `ptk`
+        let mut cipher = <V::Cipher as KeyIvInit>::new(&ek, &n2);
+        cipher.apply_keystream(&mut wrapped_key);
+
+        // step 7: Enforce Algorithm Lucidity
+        // asserted by type signature
+
+        // step 8: return ptk
+        Ok(wrapped_key.into())
     }
 }
-pub use public::SecretWrapperExt;
 
-mod pie {
-    #[cfg(feature = "v4")]
-    pub(crate) mod v4 {
-        use blake2::Blake2bMac;
-        use chacha20::XChaCha20;
-        use generic_array::typenum::{U32, U56};
-        use rusty_paseto::core::{Key, PasetoError};
+impl<V: PieVersion, K: WrapType<V>> FromStr for PieWrappedKey<V, K> {
+    type Err = PasetoError;
 
-        /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-encryption>
-        pub(crate) fn wrap(
-            h: &str,
-            ptk: &[u8],
-            wk: &[u8],
-            n: &Key<{ super::NONCE_SIZE }>,
-        ) -> String {
-            super::generic::wrap::<Blake2bMac<U56>, Blake2bMac<U32>, XChaCha20>(h, ptk, wk, n)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s
+            .strip_prefix(V::KEY_HEADER)
+            .ok_or(PasetoError::WrongHeader)?;
+        let s = s
+            .strip_prefix(K::WRAP_HEADER)
+            .ok_or(PasetoError::WrongHeader)?;
+        let s = s.strip_prefix("pie.").ok_or(PasetoError::WrongHeader)?;
+
+        let mut total = GenericArray::<u8, K::TotalLen>::default();
+        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut total)?;
+        if len != <K::TotalLen as Unsigned>::USIZE {
+            return Err(PasetoError::PayloadBase64Decode {
+                source: base64::DecodeError::InvalidLength,
+            });
         }
 
-        /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-decryption>
-        pub(crate) fn unwrap<'a>(
-            h: &str,
-            wpk: &'a mut [u8],
-            wk: &[u8],
-        ) -> Result<&'a [u8], PasetoError> {
-            super::generic::unwrap::<Blake2bMac<U56>, Blake2bMac<U32>, XChaCha20>(h, wpk, wk)
-        }
+        let (tag, nonce, wrapped_key) = K::split_total(total);
 
-        #[test]
-        fn round_trip() {
-            use rand::rngs::OsRng;
-            use rand::RngCore;
-
-            let mut ptk = [0u8; 123];
-            OsRng.fill_bytes(&mut ptk);
-
-            let nonce = Key::try_new_random().unwrap();
-
-            let wk = rusty_paseto::core::Key::<32>::try_new_random().unwrap();
-
-            let mut token = wrap("header", &ptk, &*wk, &nonce).into_bytes();
-            let ptk2 = unwrap("header", &mut token, &*wk).unwrap();
-
-            assert_eq!(ptk.as_ref(), ptk2);
-        }
+        Ok(Self {
+            wrapped_key,
+            nonce,
+            tag,
+        })
     }
+}
 
-    #[cfg(feature = "v3")]
-    pub(crate) mod v3 {
-        use aes::Aes256;
-        use ctr::Ctr64BE;
-        use hmac::Hmac;
-        use rusty_paseto::core::{Key, PasetoError};
-        use sha2::Sha384;
+impl<V: PieVersion, K: WrapType<V>> fmt::Display for PieWrappedKey<V, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(V::KEY_HEADER)?;
+        f.write_str(K::WRAP_HEADER)?;
+        f.write_str("pie.")?;
 
-        /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-encryption>
-        pub(crate) fn wrap(
-            h: &str,
-            ptk: &[u8],
-            wk: &[u8],
-            n: &Key<{ super::NONCE_SIZE }>,
-        ) -> String {
-            super::generic::wrap::<Hmac<Sha384>, Hmac<Sha384>, Ctr64BE<Aes256>>(h, ptk, wk, n)
-        }
-
-        /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-decryption>
-        pub(crate) fn unwrap<'a>(
-            h: &str,
-            wpk: &'a mut [u8],
-            wk: &[u8],
-        ) -> Result<&'a [u8], PasetoError> {
-            super::generic::unwrap::<Hmac<Sha384>, Hmac<Sha384>, Ctr64BE<Aes256>>(h, wpk, wk)
-        }
-
-        #[test]
-        fn round_trip() {
-            use rand::rngs::OsRng;
-            use rand::RngCore;
-
-            let mut ptk = [0u8; 123];
-            OsRng.fill_bytes(&mut ptk);
-
-            let nonce = Key::try_new_random().unwrap();
-
-            let wk = rusty_paseto::core::Key::<32>::try_new_random().unwrap();
-
-            let mut token = wrap("header", &ptk, &*wk, &nonce).into_bytes();
-            let ptk2 = unwrap("header", &mut token, &*wk).unwrap();
-
-            assert_eq!(ptk.as_ref(), ptk2);
-        }
-    }
-
-    pub const NONCE_SIZE: usize = 32;
-
-    mod generic {
-        use std::io::Write;
-        use std::ops::{Add, Sub};
-
-        use base64::{write::EncoderStringWriter, URL_SAFE_NO_PAD};
-        use base64ct::{Base64UrlUnpadded, Encoding};
-
-        use cipher::Unsigned;
-        use cipher::{inout::InOutBuf, Iv, Key, KeyInit, KeyIvInit, KeySizeUser, StreamCipher};
-        use digest::Mac;
-        use generic_array::sequence::Concat;
-        use generic_array::typenum::{Sum, U2};
-        use generic_array::ArrayLength;
-        use generic_array::{sequence::Split, GenericArray};
-        use rusty_paseto::core::PasetoError;
-        use subtle::ConstantTimeEq;
-
-        const ENC_CODE: u8 = 0x80;
-        const AUTH_CODE: u8 = 0x81;
-
-        /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-encryption>
-        pub(crate) fn wrap<D1, D2, C>(
-            h: &str,
-            ptk: &[u8],
-            wk: &[u8],
-            n: &rusty_paseto::core::Key<{ super::NONCE_SIZE }>,
-        ) -> String
-        where
-            D1: Mac + KeyInit,
-            D2: Mac + KeyInit,
-            C: StreamCipher + KeyIvInit,
-            D1::OutputSize: Sub<<C as KeySizeUser>::KeySize, Output = C::IvSize>,
-            D2::OutputSize: Add<U2>,
-            Sum<D2::OutputSize, U2>: ArrayLength<u8>,
-        {
-            // step 1: Enforce Algorithm Lucidity
-            // asserted by the caller.
-
-            // step 2: Generate a 256 bit (32 bytes) random nonce, n.
-            // done by the caller
-
-            // step 3: Derive the encryption key `Ek` and XChaCha nonce `n2`
-            let mut derive_ek = <D1 as Mac>::new_from_slice(wk).unwrap();
-            derive_ek.update(&[ENC_CODE]);
-            derive_ek.update(n.as_ref());
-            let (ek, n2): (Key<C>, Iv<C>) = derive_ek.finalize().into_bytes().split();
-
-            // step 4: Derive the authentication key `Ak`
-            let mut derive_ak = <D2 as Mac>::new_from_slice(wk).unwrap();
-            derive_ak.update(&[AUTH_CODE]);
-            derive_ak.update(n.as_ref());
-            let ak = derive_ak.finalize().into_bytes();
-
-            // step 5: Encrypt the plaintext key `ptk` with `Ek` and `n2` to obtain the wrapped key `c`
-            let mut chacha = C::new(&ek, &n2);
-            // a bit out of order, we stream the cipher into the MAC/base64 encoding
-
-            // step 6: Calculate the authentication tag `t`
-            let mut derive_tag = <D2 as Mac>::new_from_slice(&ak[..32]).unwrap();
-            derive_tag.update(h.as_bytes());
-            derive_tag.update(n.as_ref());
-
-            // step 7: Return base64url(t || n || c)
-            let mut enc = EncoderStringWriter::from(h.to_owned(), URL_SAFE_NO_PAD);
-            // write temporary tag which we will fill in later
-            enc.write_all(&GenericArray::<u8, D2::OutputSize>::default())
-                .unwrap();
-            enc.write_all(n.as_ref()).unwrap();
-
-            for slice in ptk.chunks(64) {
-                let mut c = [0; 64];
-                chacha.apply_keystream_inout(InOutBuf::new(slice, &mut c[..slice.len()]).unwrap());
-
-                derive_tag.update(&c[..slice.len()]);
-                enc.write_all(&c[..slice.len()]).unwrap();
-            }
-
-            let t = derive_tag.finalize().into_bytes();
-
-            // pad the tag with 2 extra bytes so we definitely fill a base64 quad
-            let extra = GenericArray::<u8, U2>::from_slice(&n.as_ref()[..2]);
-            let te = t.concat(*extra);
-
-            // encode the tag
-            let mut b64t = [0; 96];
-            let b64t = Base64UrlUnpadded::encode(&te, &mut b64t).unwrap();
-            let full_len = te.len() / 3 * 4;
-
-            let mut output = enc.into_inner();
-            output.replace_range(h.len()..h.len() + full_len, &b64t[..full_len]);
-            output
-        }
-
-        /// Implementation of <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md#v2v4-decryption>
-        pub(crate) fn unwrap<'a, D1, D2, C>(
-            h: &str,
-            wpk: &'a mut [u8],
-            wk: &[u8],
-        ) -> Result<&'a [u8], PasetoError>
-        where
-            D1: Mac + KeyInit,
-            D2: Mac + KeyInit,
-            C: StreamCipher + KeyIvInit,
-            GenericArray<u8, D1::OutputSize>:
-                Split<u8, <C as KeySizeUser>::KeySize, First = Key<C>, Second = Iv<C>>,
-        {
-            if !wpk.starts_with(h.as_bytes()) {
-                return Err(PasetoError::WrongHeader);
-            }
-            let wpk = &mut wpk[h.len()..];
-
-            // step 1: Decode `b` from Base64url
-            let len = Base64UrlUnpadded::decode_in_place(wpk)
-                .map_err(|_err| PasetoError::PayloadBase64Decode {
-                    source: base64::DecodeError::InvalidLength,
-                })?
-                .len();
-
-            if len < 64 {
-                return Err(PasetoError::IncorrectSize);
-            }
-
-            let b = &mut wpk[..len];
-            let (t, b) = b.split_at_mut(<D2::OutputSize as Unsigned>::USIZE);
-            let (n, c) = b.split_at_mut(super::NONCE_SIZE);
-
-            // step 2: Derive the authentication key `Ak`
-            let mut derive_ak = <D2 as Mac>::new_from_slice(wk).unwrap();
-            derive_ak.update(&[AUTH_CODE]);
-            derive_ak.update(n);
-            let ak = derive_ak.finalize().into_bytes();
-
-            // step 3: Recalculate the authentication tag t2
-            let mut derive_tag = <D2 as Mac>::new_from_slice(&ak[..32]).unwrap();
-            derive_tag.update(h.as_bytes());
-            derive_tag.update(n);
-            derive_tag.update(c);
-            let t2 = derive_tag.finalize().into_bytes();
-
-            // step 4: Compare t with t2 in constant-time. If it doesn't match, abort.
-            if t.ct_ne(&t2).into() {
-                return Err(PasetoError::InvalidSignature);
-            }
-
-            // step 5: Derive the encryption key `Ek` and XChaCha nonce `n2`
-            let mut derive_ek = <D1 as Mac>::new_from_slice(wk).unwrap();
-            derive_ek.update(&[ENC_CODE]);
-            derive_ek.update(n);
-            let (ek, n2): (Key<C>, Iv<C>) = derive_ek.finalize().into_bytes().split();
-
-            // step 6: Decrypt the wrapped key `c` with `Ek` and `n2` to obtain the plaintext key `ptk`
-            let mut chacha = C::new(&ek, &n2);
-            chacha.apply_keystream_inout(InOutBuf::from(&mut *c));
-
-            // step 7: Enforce Algorithm Lucidity
-            // asserted by the caller.
-
-            // step 8: return ptk
-            Ok(c)
-        }
+        let total = K::into_total(&self.tag, &self.nonce, &self.wrapped_key);
+        write_b64(&total, f)
     }
 }

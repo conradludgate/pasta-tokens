@@ -4,34 +4,35 @@
 //!
 //! # Local IDs
 //! ```
-//! use rusty_paserk::id::EncodeId;
-//! use rusty_paseto::core::{PasetoSymmetricKey, V4, Local, Key};
+//! use rusty_paserk::id::KeyId;
+//! use rusty_paserk::key::{Key, LocalKey};
+//! use rusty_paseto::core::V4;
 //!
-//! let local_key = PasetoSymmetricKey::<V4, Local>::from(Key::try_new_random().unwrap());
-//! let kid = local_key.encode_id();
-//! // => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
+//! let local_key = Key::<V4, LocalKey>::new_random();
+//! let kid: KeyId<V4, LocalKey> = local_key.into();
+//! // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
 //! ```
 //!
 //! # Secret IDs
 //! ```
-//! use rusty_paserk::id::EncodeId;
-//! use rusty_paseto::core::{PasetoAsymmetricPrivateKey, V4, Public, Key};
+//! use rusty_paserk::id::KeyId;
+//! use rusty_paserk::key::{Key, SecretKey};
+//! use rusty_paseto::core::V4;
 //!
-//! let secret_key = Key::try_new_random().unwrap();
-//! let secret_key = PasetoAsymmetricPrivateKey::<V4, Public>::from(&secret_key);
-//! let kid = secret_key.encode_id();
-//! // => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
+//! let local_key = Key::<V4, SecretKey>::new_random();
+//! let kid: KeyId<V4, SecretKey> = local_key.into();
+//! // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
 //! ```
 //!
 //! # Public IDs
 //! ```
-//! use rusty_paserk::id::EncodeId;
-//! use rusty_paseto::core::{PasetoAsymmetricPublicKey, V4, Public, Key};
+//! use rusty_paserk::id::KeyId;
+//! use rusty_paserk::key::{Key, PublicKey};
+//! use rusty_paseto::core::V4;
 //!
-//! let public_key = Key::try_new_random().unwrap();
-//! let public_key = PasetoAsymmetricPublicKey::<V4, Public>::from(&public_key);
-//! let kid = public_key.encode_id();
-//! // => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
+//! let local_key = Key::<V4, PublicKey>::new_random();
+//! let kid: KeyId<V4, PublicKey> = local_key.into();
+//! // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
 //! ```
 use std::{fmt, marker::PhantomData, str::FromStr};
 
@@ -112,8 +113,8 @@ impl<V: Version, K: KeyType<V>> Clone for KeyId<V, K> {
 impl<V: Version, K: KeyType<V>> Copy for KeyId<V, K> {}
 
 #[cfg(feature = "v3")]
-impl<K: KeyType<V3>> From<&Key<V3, K>> for KeyId<V3, K> {
-    fn from(key: &Key<V3, K>) -> Self {
+impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {
+    fn from(key: Key<V3, K>) -> Self {
         use base64ct::{Base64UrlUnpadded, Encoding};
         use sha2::digest::Digest;
 
@@ -139,8 +140,8 @@ impl<K: KeyType<V3>> From<&Key<V3, K>> for KeyId<V3, K> {
 }
 
 #[cfg(feature = "v4")]
-impl<K: KeyType<V4>> From<&Key<V4, K>> for KeyId<V4, K> {
-    fn from(key: &Key<V4, K>) -> Self {
+impl<K: KeyType<V4>> From<Key<V4, K>> for KeyId<V4, K> {
+    fn from(key: Key<V4, K>) -> Self {
         use base64ct::{Base64UrlUnpadded, Encoding};
         use blake2::digest::Digest;
 

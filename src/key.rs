@@ -7,6 +7,7 @@ use generic_array::{
     typenum::{U32, U48, U49, U64},
     ArrayLength, GenericArray,
 };
+use rand::{rngs::OsRng, RngCore};
 use rusty_paseto::core::PasetoError;
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
@@ -135,6 +136,12 @@ impl<V: Version, K: KeyType<V>> Clone for Key<V, K> {
         }
     }
 }
+impl Copy for Key<V3, LocalKey> {}
+impl Copy for Key<V4, LocalKey> {}
+impl Copy for Key<V3, PublicKey> {}
+impl Copy for Key<V4, PublicKey> {}
+impl Copy for Key<V3, SecretKey> {}
+impl Copy for Key<V4, SecretKey> {}
 
 impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -154,10 +161,23 @@ impl<V: Version, K: KeyType<V>> TryFrom<&[u8]> for Key<V, K> {
         Ok(Key { key })
     }
 }
+impl<V: Version, K: KeyType<V>> From<GenericArray<u8, K::KeyLen>> for Key<V, K> {
+    fn from(key: GenericArray<u8, K::KeyLen>) -> Self {
+        Self { key }
+    }
+}
 
 impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
     fn as_ref(&self) -> &[u8] {
         &self.key
+    }
+}
+
+impl<V: Version, K: KeyType<V>> Key<V, K> {
+    pub fn new_random() -> Self {
+        let mut key = GenericArray::<u8, K::KeyLen>::default();
+        OsRng.fill_bytes(&mut key);
+        Self { key }
     }
 }
 

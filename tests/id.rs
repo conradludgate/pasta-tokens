@@ -20,7 +20,7 @@ struct TestFile {
 
 fn id<V: Version, K: KeyType<V>>(test_file: TestFile)
 where
-    for<'a> KeyId<V, K>: From<&'a Key<V, K>>,
+    KeyId<V, K>: From<Key<V, K>>,
 {
     for test in test_file.tests {
         if let Some(paserk) = test.paserk {
@@ -29,7 +29,7 @@ where
                 .as_slice()
                 .try_into()
                 .unwrap();
-            let kid: KeyId<V, K> = (&key).into();
+            let kid: KeyId<V, K> = key.into();
             let kid2: KeyId<V, K> = paserk.parse().unwrap();
 
             assert_eq!(kid, kid2, "{} > {}: kid failed", test_file.name, test.name);
