@@ -1,6 +1,5 @@
-use base64::decode_config;
 use rusty_paserk::wrap::{LocalWrapperExt, Pie, SecretWrapperExt};
-use rusty_paseto::core::{Key, Local, PasetoSymmetricKey, V1, V2, V3, V4};
+use rusty_paseto::core::{Key, Local, PasetoSymmetricKey, V3, V4};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -57,20 +56,6 @@ where
 }
 
 #[test]
-fn local_v1() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k1.local-wrap.pie.json")).unwrap();
-    local_wrap_test::<V1>(test_file);
-}
-
-#[test]
-fn local_v2() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k2.local-wrap.pie.json")).unwrap();
-    local_wrap_test::<V2>(test_file);
-}
-
-#[test]
 fn local_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.local-wrap.pie.json")).unwrap();
@@ -117,54 +102,6 @@ where
             )
         }
     }
-}
-
-#[test]
-fn secret_v1() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k1.secret-wrap.pie.json")).unwrap();
-
-    for test in test_file.tests {
-        let wrapping = hex::decode(test.wrapping_key).unwrap();
-        let wrapping_key = PasetoSymmetricKey::<V1, Local>::from(Key::from(&*wrapping));
-        let mut wrapped = test.paserk.into_bytes();
-
-        if test.expect_fail {
-            Pie::unwrap_secret(&mut wrapped, &wrapping_key)
-                .map(|_| {})
-                .expect_err(&format!(
-                    "{} > {}: {}",
-                    test_file.name,
-                    test.name,
-                    test.comment.unwrap()
-                ));
-        } else {
-            let key = Pie::unwrap_secret(&mut wrapped, &wrapping_key).unwrap_or_else(|err| {
-                panic!("{} > {}: unwrap failed {err:?}", test_file.name, test.name)
-            });
-
-            let unwrapped = test.unwrapped.unwrap();
-            let unwrapped = unwrapped
-                .trim_start_matches("-----BEGIN RSA PRIVATE KEY-----\n")
-                .trim_end_matches("\n-----END RSA PRIVATE KEY-----");
-            let unwrapped = decode_config(&unwrapped.replace('\n', ""), base64::STANDARD).unwrap();
-
-            assert_eq!(
-                key.as_ref(),
-                &unwrapped,
-                "{} > {}: unwrap failed",
-                test_file.name,
-                test.name
-            )
-        }
-    }
-}
-
-#[test]
-fn secret_v2() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k2.secret-wrap.pie.json")).unwrap();
-    secret_wrap_test::<V2>(test_file);
 }
 
 // not supported for now

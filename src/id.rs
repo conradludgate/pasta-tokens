@@ -35,10 +35,6 @@
 //! ```
 use generic_array::typenum::U33;
 
-#[cfg(feature = "v1")]
-use rusty_paseto::core::V1;
-#[cfg(feature = "v2")]
-use rusty_paseto::core::V2;
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
@@ -50,43 +46,27 @@ pub trait EncodeId {
     fn encode_id(&self) -> String;
 }
 
-#[cfg(feature = "local")]
 /// local-id <https://github.com/paseto-standard/paserk/blob/master/types/lid.md>
 mod local {
     use rusty_paseto::core::{Local, PasetoSymmetricKey};
 
     use super::*;
 
-    #[cfg(feature = "v1")]
-    impl EncodeId for PasetoSymmetricKey<V1, Local> {
-        fn encode_id(&self) -> String {
-            encode_v1_v3("k1.lid.", "k1.local.", self.as_ref())
-        }
-    }
-
-    #[cfg(feature = "v2")]
-    impl EncodeId for PasetoSymmetricKey<V2, Local> {
-        fn encode_id(&self) -> String {
-            encode_v2_v4("k2.lid.", "k2.local.", self.as_ref())
-        }
-    }
-
     #[cfg(feature = "v3")]
     impl EncodeId for PasetoSymmetricKey<V3, Local> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k3.lid.", "k3.local.", self.as_ref())
+            encode_v3("k3.lid.", "k3.local.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v4")]
     impl EncodeId for PasetoSymmetricKey<V4, Local> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k4.lid.", "k4.local.", self.as_ref())
+            encode_v4("k4.lid.", "k4.local.", self.as_ref())
         }
     }
 }
 
-#[cfg(feature = "public")]
 /// public-id <https://github.com/paseto-standard/paserk/blob/master/types/pid.md>
 /// secret-id <https://github.com/paseto-standard/paserk/blob/master/types/sid.md>
 mod public {
@@ -94,89 +74,38 @@ mod public {
 
     use super::*;
 
-    #[cfg(feature = "v1")]
-    impl EncodeId for PasetoAsymmetricPrivateKey<'_, V1, Public> {
-        fn encode_id(&self) -> String {
-            encode_v1_arbitraty("k1.sid.", "k1.secret.", self.as_ref())
-        }
-    }
-
-    #[cfg(feature = "v2")]
-    impl EncodeId for PasetoAsymmetricPrivateKey<'_, V2, Public> {
-        fn encode_id(&self) -> String {
-            encode_v2_v4("k2.sid.", "k2.secret.", self.as_ref())
-        }
-    }
-
     #[cfg(feature = "v3")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V3, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k3.sid.", "k3.secret.", self.as_ref())
+            encode_v3("k3.sid.", "k3.secret.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v4")]
     impl EncodeId for PasetoAsymmetricPrivateKey<'_, V4, Public> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k4.sid.", "k4.secret.", self.as_ref())
-        }
-    }
-
-    #[cfg(feature = "v1")]
-    impl EncodeId for PasetoAsymmetricPublicKey<'_, V1, Public> {
-        fn encode_id(&self) -> String {
-            encode_v1_arbitraty("k1.pid.", "k1.public.", self.as_ref())
-        }
-    }
-
-    #[cfg(feature = "v2")]
-    impl EncodeId for PasetoAsymmetricPublicKey<'_, V2, Public> {
-        fn encode_id(&self) -> String {
-            encode_v2_v4("k2.pid.", "k2.public.", self.as_ref())
+            encode_v4("k4.sid.", "k4.secret.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v3")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V3, Public> {
         fn encode_id(&self) -> String {
-            encode_v1_v3("k3.pid.", "k3.public.", self.as_ref())
+            encode_v3("k3.pid.", "k3.public.", self.as_ref())
         }
     }
 
     #[cfg(feature = "v4")]
     impl EncodeId for PasetoAsymmetricPublicKey<'_, V4, Public> {
         fn encode_id(&self) -> String {
-            encode_v2_v4("k4.pid.", "k4.public.", self.as_ref())
+            encode_v4("k4.pid.", "k4.public.", self.as_ref())
         }
     }
 }
 
-/// V1 assymetrical keys are arbitrary length so they need extra consideration
-#[cfg(any(feature = "v1"))]
-fn encode_v1_arbitraty(header: &str, header2: &str, key: &[u8]) -> String {
-    use base64ct::{Base64UrlUnpadded, Encoding};
-    use sha2::digest::Digest;
-
-    let mut output = vec![0; usize::max(Base64UrlUnpadded::encoded_len(key), 44)];
-    let p = Base64UrlUnpadded::encode(key, &mut output).unwrap();
-
-    let mut derive_d = sha2::Sha384::new();
-    derive_d.update(header);
-    derive_d.update(header2);
-    derive_d.update(p);
-    let d = derive_d.finalize();
-    let d = &d[..33];
-
-    // > When base64url-encoded, d will produce an unpadded 44-byte string.
-    // 44 < output.len()
-    let b64d = Base64UrlUnpadded::encode(d, &mut output).unwrap();
-    format!("{header}{b64d}")
-}
-
-/// V1 and V3 keys use the same encoding
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-1-and-3>
 #[cfg(any(feature = "v1", feature = "v3"))]
-fn encode_v1_v3(header: &str, header2: &str, key: &[u8]) -> String {
+fn encode_v3(header: &str, header2: &str, key: &[u8]) -> String {
     use base64ct::{Base64UrlUnpadded, Encoding};
     use sha2::digest::Digest;
 
@@ -198,10 +127,9 @@ fn encode_v1_v3(header: &str, header2: &str, key: &[u8]) -> String {
     format!("{header}{b64d}")
 }
 
-/// V2 and V4 keys use the same encoding
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-2-and-4>
 #[cfg(any(feature = "v2", feature = "v4"))]
-fn encode_v2_v4(header: &str, header2: &str, key: &[u8]) -> String {
+fn encode_v4(header: &str, header2: &str, key: &[u8]) -> String {
     use base64ct::{Base64UrlUnpadded, Encoding};
     use blake2::digest::Digest;
 

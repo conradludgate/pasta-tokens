@@ -1,8 +1,7 @@
-use base64::decode_config;
 use rusty_paserk::id::EncodeId;
 use rusty_paseto::core::{
     Key, Local, PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, PasetoSymmetricKey, Public,
-    V1, V2, V3, V4,
+    V3, V4,
 };
 use serde::Deserialize;
 
@@ -39,20 +38,6 @@ where
 }
 
 #[test]
-fn local_v1() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k1.lid.json")).unwrap();
-    local_id::<V1>(test_file);
-}
-
-#[test]
-fn local_v2() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k2.lid.json")).unwrap();
-    local_id::<V2>(test_file);
-}
-
-#[test]
 fn local_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.lid.json")).unwrap();
@@ -64,51 +49,6 @@ fn local_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.lid.json")).unwrap();
     local_id::<V4>(test_file);
-}
-
-#[test]
-fn public_v1() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k1.pid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = test
-                .key
-                .trim_start_matches("-----BEGIN PUBLIC KEY-----\n")
-                .trim_end_matches("\n-----END PUBLIC KEY-----");
-            let key = decode_config(&key.replace('\n', ""), base64::STANDARD).unwrap();
-            let key = PasetoAsymmetricPublicKey::<V1, Public>::from(key.as_slice());
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
-}
-
-#[test]
-fn public_v2() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k2.pid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = Key::from(&*key);
-            let key = PasetoAsymmetricPublicKey::<V2, Public>::from(&key);
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
 }
 
 #[test]
@@ -142,51 +82,6 @@ fn public_v4() {
             let key = hex::decode(test.key).unwrap();
             let key = Key::from(&*key);
             let key = PasetoAsymmetricPublicKey::<V4, Public>::from(&key);
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
-}
-
-#[test]
-fn secret_v1() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k1.sid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = test
-                .key
-                .trim_start_matches("-----BEGIN RSA PRIVATE KEY-----\n")
-                .trim_end_matches("\n-----END RSA PRIVATE KEY-----");
-            let key = decode_config(&key.replace('\n', ""), base64::STANDARD).unwrap();
-            let key = PasetoAsymmetricPrivateKey::<V1, Public>::from(key.as_slice());
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
-}
-
-#[test]
-fn secret_v2() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k2.sid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = Key::from(&*key);
-            let key = PasetoAsymmetricPrivateKey::<V2, Public>::from(&key);
             let kid = key.encode_id();
 
             assert_eq!(

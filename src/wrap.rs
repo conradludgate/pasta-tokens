@@ -4,10 +4,6 @@
 
 use rusty_paseto::core::{Key, Local, PasetoError, PasetoSymmetricKey};
 
-#[cfg(feature = "v1")]
-use rusty_paseto::core::V1;
-#[cfg(feature = "v2")]
-use rusty_paseto::core::V2;
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
@@ -54,7 +50,6 @@ use rusty_paseto::core::V4;
 /// ```
 pub struct Pie;
 
-#[cfg(feature = "local")]
 mod local {
     use super::*;
 
@@ -71,64 +66,6 @@ mod local {
         ) -> Result<PasetoSymmetricKey<Version, Local>, PasetoError>;
     }
 
-    #[cfg(feature = "v1")]
-    impl LocalWrapperExt<V1> for Pie {
-        fn wrap_local(
-            ptk: &PasetoSymmetricKey<V1, Local>,
-            wk: &PasetoSymmetricKey<V1, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k1.local-wrap.pie.";
-            pie::v1_v3::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-        }
-
-        fn unwrap_local(
-            wpk: &mut [u8],
-            wk: &PasetoSymmetricKey<V1, Local>,
-        ) -> Result<PasetoSymmetricKey<V1, Local>, PasetoError> {
-            let header = "k1.local-wrap.pie.";
-            pie::v1_v3::unwrap(header, wpk, wk.as_ref())
-                .and_then(|k| {
-                    if k.len() != 32 {
-                        Err(PasetoError::IncorrectSize)
-                    } else {
-                        Ok(k)
-                    }
-                })
-                .map(Key::from)
-                .map(PasetoSymmetricKey::from)
-        }
-    }
-
-    #[cfg(feature = "v2")]
-    impl LocalWrapperExt<V2> for Pie {
-        fn wrap_local(
-            ptk: &PasetoSymmetricKey<V2, Local>,
-            wk: &PasetoSymmetricKey<V2, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k2.local-wrap.pie.";
-            pie::v2_v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-        }
-
-        fn unwrap_local(
-            wpk: &mut [u8],
-            wk: &PasetoSymmetricKey<V2, Local>,
-        ) -> Result<PasetoSymmetricKey<V2, Local>, PasetoError> {
-            let header = "k2.local-wrap.pie.";
-            pie::v2_v4::unwrap(header, wpk, wk.as_ref())
-                .and_then(|k| {
-                    if k.len() != 32 {
-                        Err(PasetoError::IncorrectSize)
-                    } else {
-                        Ok(k)
-                    }
-                })
-                .map(Key::from)
-                .map(PasetoSymmetricKey::from)
-        }
-    }
-
     #[cfg(feature = "v3")]
     impl LocalWrapperExt<V3> for Pie {
         fn wrap_local(
@@ -137,7 +74,7 @@ mod local {
             nonce: &Key<{ pie::NONCE_SIZE }>,
         ) -> String {
             let header = "k3.local-wrap.pie.";
-            pie::v1_v3::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
+            pie::v3::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
         }
 
         fn unwrap_local(
@@ -145,7 +82,7 @@ mod local {
             wk: &PasetoSymmetricKey<V3, Local>,
         ) -> Result<PasetoSymmetricKey<V3, Local>, PasetoError> {
             let header = "k3.local-wrap.pie.";
-            pie::v1_v3::unwrap(header, wpk, wk.as_ref())
+            pie::v3::unwrap(header, wpk, wk.as_ref())
                 .and_then(|k| {
                     if k.len() != 32 {
                         Err(PasetoError::IncorrectSize)
@@ -166,7 +103,7 @@ mod local {
             nonce: &Key<{ pie::NONCE_SIZE }>,
         ) -> String {
             let header = "k4.local-wrap.pie.";
-            pie::v2_v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
+            pie::v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
         }
 
         fn unwrap_local(
@@ -174,7 +111,7 @@ mod local {
             wk: &PasetoSymmetricKey<V4, Local>,
         ) -> Result<PasetoSymmetricKey<V4, Local>, PasetoError> {
             let header = "k4.local-wrap.pie.";
-            pie::v2_v4::unwrap(header, wpk, wk.as_ref())
+            pie::v4::unwrap(header, wpk, wk.as_ref())
                 .and_then(|k| {
                     if k.len() != 32 {
                         Err(PasetoError::IncorrectSize)
@@ -187,10 +124,8 @@ mod local {
         }
     }
 }
-#[cfg(feature = "local")]
 pub use local::LocalWrapperExt;
 
-#[cfg(feature = "public")]
 mod public {
     use rusty_paseto::core::{PasetoAsymmetricPrivateKey, Public};
 
@@ -207,46 +142,6 @@ mod public {
             wpk: &'wpk mut [u8],
             wk: &PasetoSymmetricKey<Version, Local>,
         ) -> Result<PasetoAsymmetricPrivateKey<'wpk, Version, Public>, PasetoError>;
-    }
-
-    #[cfg(feature = "v1")]
-    impl SecretWrapperExt<V1> for Pie {
-        fn wrap_secret(
-            ptk: &PasetoAsymmetricPrivateKey<V1, Public>,
-            wk: &PasetoSymmetricKey<V1, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k1.secret-wrap.pie.";
-            pie::v1_v3::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-        }
-
-        fn unwrap_secret<'wpk>(
-            wpk: &'wpk mut [u8],
-            wk: &PasetoSymmetricKey<V1, Local>,
-        ) -> Result<PasetoAsymmetricPrivateKey<'wpk, V1, Public>, PasetoError> {
-            let header = "k1.secret-wrap.pie.";
-            pie::v1_v3::unwrap(header, wpk, wk.as_ref()).map(PasetoAsymmetricPrivateKey::from)
-        }
-    }
-
-    #[cfg(feature = "v2")]
-    impl SecretWrapperExt<V2> for Pie {
-        fn wrap_secret(
-            ptk: &PasetoAsymmetricPrivateKey<V2, Public>,
-            wk: &PasetoSymmetricKey<V2, Local>,
-            nonce: &Key<{ pie::NONCE_SIZE }>,
-        ) -> String {
-            let header = "k2.secret-wrap.pie.";
-            pie::v2_v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
-        }
-
-        fn unwrap_secret<'wpk>(
-            wpk: &'wpk mut [u8],
-            wk: &PasetoSymmetricKey<V2, Local>,
-        ) -> Result<PasetoAsymmetricPrivateKey<'wpk, V2, Public>, PasetoError> {
-            let header = "k2.secret-wrap.pie.";
-            pie::v2_v4::unwrap(header, wpk, wk.as_ref()).map(PasetoAsymmetricPrivateKey::from)
-        }
     }
 
     // We can't support v3 because there's no way to return a type of `PasetoAsymmetricPrivateKey<'wpk, V3, Public>`
@@ -288,7 +183,7 @@ mod public {
             nonce: &Key<{ pie::NONCE_SIZE }>,
         ) -> String {
             let header = "k4.secret-wrap.pie.";
-            pie::v2_v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
+            pie::v4::wrap(header, ptk.as_ref(), wk.as_ref(), nonce)
         }
 
         fn unwrap_secret<'wpk>(
@@ -296,16 +191,15 @@ mod public {
             wk: &PasetoSymmetricKey<V4, Local>,
         ) -> Result<PasetoAsymmetricPrivateKey<'wpk, V4, Public>, PasetoError> {
             let header = "k4.secret-wrap.pie.";
-            pie::v2_v4::unwrap(header, wpk, wk.as_ref()).map(PasetoAsymmetricPrivateKey::from)
+            pie::v4::unwrap(header, wpk, wk.as_ref()).map(PasetoAsymmetricPrivateKey::from)
         }
     }
 }
-#[cfg(feature = "public")]
 pub use public::SecretWrapperExt;
 
 mod pie {
-    #[cfg(any(feature = "v2", feature = "v4"))]
-    pub(crate) mod v2_v4 {
+    #[cfg(feature = "v4")]
+    pub(crate) mod v4 {
         use blake2::Blake2bMac;
         use chacha20::XChaCha20;
         use generic_array::typenum::{U32, U56};
@@ -349,8 +243,8 @@ mod pie {
         }
     }
 
-    #[cfg(any(feature = "v1", feature = "v3"))]
-    pub(crate) mod v1_v3 {
+    #[cfg(feature = "v3")]
+    pub(crate) mod v3 {
         use aes::Aes256;
         use ctr::Ctr64BE;
         use hmac::Hmac;

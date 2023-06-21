@@ -1,5 +1,5 @@
 use rusty_paserk::pke::Unseal;
-use rusty_paseto::core::{Key, PasetoAsymmetricPrivateKey, Public, V2, V4};
+use rusty_paseto::core::{Key, PasetoAsymmetricPrivateKey, Public, V4};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -58,13 +58,6 @@ where
             )
         }
     }
-}
-
-#[test]
-fn local_v2() {
-    let test_file: TestFile =
-        serde_json::from_str(include_str!("test-vectors/k2.seal.json")).unwrap();
-    test::<V2>(test_file)
 }
 
 #[test]
