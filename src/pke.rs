@@ -12,7 +12,7 @@ use cipher::{inout::InOutBuf, KeyIvInit, StreamCipher};
 use digest::Mac;
 use generic_array::{
     sequence::{Concat, Split},
-    typenum::{U24, U32, U96},
+    typenum::{U24, U32},
     ArrayLength, GenericArray,
 };
 use rand::rngs::OsRng;
@@ -33,9 +33,62 @@ pub struct SealedKey<V: SealedVersion> {
     encrypted_data_key: GenericArray<u8, V::Local>,
 }
 
-#[cfg(feature = "v4")]
-impl Key<V4, LocalKey> {
-    pub fn seal(&self, sealing_key: &Key<V4, PublicKey>) -> SealedKey<V4> {
+impl<V: SealedVersion> Key<V, LocalKey> {
+    pub fn seal(&self, sealing_key: &Key<V, PublicKey>) -> SealedKey<V> {
+        V::seal(self, sealing_key)
+    }
+}
+
+impl<V: SealedVersion> SealedKey<V> {
+    pub fn unseal(
+        self,
+        unsealing_key: &Key<V, SecretKey>,
+    ) -> Result<Key<V, LocalKey>, PasetoError> {
+        V::unseal(self, unsealing_key)
+    }
+}
+
+pub trait SealedVersion: Version + Sized {
+    type TagLen: ArrayLength<u8>;
+    type EpkLen: ArrayLength<u8>;
+
+    type TotalLen: ArrayLength<u8>;
+    #[allow(clippy::type_complexity)]
+    fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self>;
+    fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen>;
+
+    fn seal(
+        plaintext_key: &Key<Self, LocalKey>,
+        sealing_key: &Key<Self, PublicKey>,
+    ) -> SealedKey<Self>;
+    fn unseal(
+        sealed_key: SealedKey<Self>,
+        unsealing_key: &Key<Self, SecretKey>,
+    ) -> Result<Key<Self, LocalKey>, PasetoError>;
+}
+
+impl SealedVersion for V4 {
+    type TagLen = U32;
+    type EpkLen = U32;
+
+    type TotalLen = generic_array::typenum::U96;
+    fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self> {
+        let (tag, rest) = total.split();
+        let (ephemeral_public_key, encrypted_data_key) = rest.split();
+        SealedKey {
+            tag,
+            ephemeral_public_key,
+            encrypted_data_key,
+        }
+    }
+    fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen> {
+        sealed
+            .tag
+            .concat(sealed.ephemeral_public_key)
+            .concat(sealed.encrypted_data_key)
+    }
+
+    fn seal(plaintext_key: &Key<V4, LocalKey>, sealing_key: &Key<V4, PublicKey>) -> SealedKey<V4> {
         // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
         let pk = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(sealing_key.as_ref())
             .unwrap();
@@ -74,7 +127,7 @@ impl Key<V4, LocalKey> {
 
         let mut edk = GenericArray::<u8, <V4 as Version>::Local>::default();
         XChaCha20::new(&ek, &n)
-            .apply_keystream_inout(InOutBuf::new(self.as_ref(), &mut edk).unwrap());
+            .apply_keystream_inout(InOutBuf::new(plaintext_key.as_ref(), &mut edk).unwrap());
 
         let tag = Blake2bMac::<U32>::new_from_slice(&ak)
             .unwrap()
@@ -91,15 +144,12 @@ impl Key<V4, LocalKey> {
             encrypted_data_key: edk,
         }
     }
-}
 
-#[cfg(feature = "v4")]
-impl SealedKey<V4> {
-    pub fn unseal(
-        mut self,
-        unsealing_key: &Key<V4, SecretKey>,
-    ) -> Result<Key<V4, LocalKey>, PasetoError> {
-        let epk: [u8; 32] = self.ephemeral_public_key.into();
+    fn unseal(
+        mut sealed_key: SealedKey<Self>,
+        unsealing_key: &Key<Self, SecretKey>,
+    ) -> Result<Key<Self, LocalKey>, PasetoError> {
+        let epk: [u8; 32] = sealed_key.ephemeral_public_key.into();
         let epk = x25519_dalek::PublicKey::from(epk);
 
         // expand sk
@@ -128,12 +178,12 @@ impl SealedKey<V4> {
             .chain_update(V4::KEY_HEADER)
             .chain_update("seal.")
             .chain_update(epk.as_bytes())
-            .chain_update(self.encrypted_data_key)
+            .chain_update(sealed_key.encrypted_data_key)
             .finalize()
             .into_bytes();
 
         // step 6: Compare t2 with t, using a constant-time compare function. If it does not match, abort.
-        if self.tag.ct_ne(&t2).into() {
+        if sealed_key.tag.ct_ne(&t2).into() {
             return Err(PasetoError::InvalidSignature);
         }
 
@@ -151,31 +201,21 @@ impl SealedKey<V4> {
             .chain_update(xpk.as_bytes())
             .finalize();
 
-        XChaCha20::new(&ek, &n).apply_keystream(&mut self.encrypted_data_key);
-        Ok(self.encrypted_data_key.into())
+        XChaCha20::new(&ek, &n).apply_keystream(&mut sealed_key.encrypted_data_key);
+        Ok(sealed_key.encrypted_data_key.into())
     }
 }
 
-pub trait SealedVersion: Version {
-    type TagLen: ArrayLength<u8>;
-    type EpkLen: ArrayLength<u8>;
-}
-
-impl SealedVersion for V4 {
-    type TagLen = U32;
-    type EpkLen = U32;
-}
-
-impl FromStr for SealedKey<V4> {
+impl<V: SealedVersion> FromStr for SealedKey<V> {
     type Err = PasetoError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s
-            .strip_prefix(V4::KEY_HEADER)
+            .strip_prefix(V::KEY_HEADER)
             .ok_or(PasetoError::WrongHeader)?;
         let s = s.strip_prefix("seal.").ok_or(PasetoError::WrongHeader)?;
 
-        let mut total = GenericArray::<u8, U96>::default();
+        let mut total = GenericArray::<u8, V::TotalLen>::default();
         let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut total)?;
         if len != 96 {
             return Err(PasetoError::PayloadBase64Decode {
@@ -183,26 +223,15 @@ impl FromStr for SealedKey<V4> {
             });
         }
 
-        let (tag, rest) = total.split();
-        let (ephemeral_public_key, encrypted_data_key) = rest.split();
-
-        Ok(Self {
-            tag,
-            ephemeral_public_key,
-            encrypted_data_key,
-        })
+        Ok(V::split_total(total))
     }
 }
 
-impl fmt::Display for SealedKey<V4> {
+impl<V: SealedVersion> fmt::Display for SealedKey<V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(V4::KEY_HEADER)?;
         f.write_str("seal.")?;
 
-        let total = self
-            .tag
-            .concat(self.ephemeral_public_key)
-            .concat(self.encrypted_data_key);
-        write_b64(&total, f)
+        write_b64(&V::join_total(self), f)
     }
 }

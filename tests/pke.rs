@@ -1,6 +1,6 @@
 use rusty_paserk::{
     key::{Key, LocalKey, SecretKey},
-    pke::SealedKey,
+    pke::{SealedKey, SealedVersion},
 };
 use rusty_paseto::core::{PasetoError, V4};
 use serde::Deserialize;
@@ -13,8 +13,6 @@ struct Test {
     paserk: String,
     comment: Option<String>,
     unsealed: Option<String>,
-    #[serde(rename = "sealing-public-key")]
-    _sealing_public_key: String,
     #[serde(rename = "sealing-secret-key")]
     sealing_secret_key: String,
 }
@@ -25,15 +23,13 @@ struct TestFile {
     tests: Vec<Test>,
 }
 
-fn test(test_file: TestFile) {
+fn test<V: SealedVersion>(test_file: TestFile) {
     for test in test_file.tests {
-        // let spk = hex::decode(test.sealing_public_key).unwrap();
         let ssk = hex::decode(test.sealing_secret_key).unwrap();
-        // let spk = Key::from(&*spk);
-        let ssk = Key::<V4, SecretKey>::try_from(&*ssk).unwrap();
+        let ssk = Key::<V, SecretKey>::try_from(&*ssk).unwrap();
 
-        let result: Result<SealedKey<V4>, PasetoError> = test.paserk.parse();
-        let result: Result<Key<V4, LocalKey>, PasetoError> = result.and_then(|s| s.unseal(&ssk));
+        let result: Result<SealedKey<V>, PasetoError> = test.paserk.parse();
+        let result: Result<Key<V, LocalKey>, PasetoError> = result.and_then(|s| s.unseal(&ssk));
 
         if test.expect_fail {
             result.map(|_| {}).expect_err(&format!(
@@ -54,7 +50,7 @@ fn test(test_file: TestFile) {
                 "{} > {}: unseal failed",
                 test_file.name,
                 test.name
-            )
+            );
         }
     }
 }
@@ -63,5 +59,5 @@ fn test(test_file: TestFile) {
 fn local_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.seal.json")).unwrap();
-    test(test_file)
+    test::<V4>(test_file)
 }
