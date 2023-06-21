@@ -17,9 +17,7 @@ use crate::key::{write_b64, Key, KeyType, Version};
 ///
 /// # Local IDs
 /// ```
-/// use rusty_paserk::id::KeyId;
-/// use rusty_paserk::key::{Key, Local};
-/// use rusty_paseto::core::V4;
+/// use rusty_paserk::{KeyId, Key, Local, V4};
 ///
 /// let local_key = Key::<V4, Local>::new_random();
 /// let kid: KeyId<V4, Local> = local_key.into();
@@ -28,9 +26,7 @@ use crate::key::{write_b64, Key, KeyType, Version};
 ///
 /// # Secret IDs
 /// ```
-/// use rusty_paserk::id::KeyId;
-/// use rusty_paserk::key::{Key, Secret};
-/// use rusty_paseto::core::V4;
+/// use rusty_paserk::{KeyId, Key, Secret, V4};
 ///
 /// let local_key = Key::<V4, Secret>::new_random();
 /// let kid: KeyId<V4, Secret> = local_key.into();
@@ -39,9 +35,7 @@ use crate::key::{write_b64, Key, KeyType, Version};
 ///
 /// # Public IDs
 /// ```
-/// use rusty_paserk::id::KeyId;
-/// use rusty_paserk::key::{Key, Public};
-/// use rusty_paseto::core::V4;
+/// use rusty_paserk::{KeyId, Key, Public, V4};
 ///
 /// let local_key = Key::<V4, Public>::new_random();
 /// let kid: KeyId<V4, Public> = local_key.into();

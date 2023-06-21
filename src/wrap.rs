@@ -28,9 +28,7 @@ use crate::key::{write_b64, Key, KeyType, Local, Secret, Version};
 ///
 /// # Local Wrapping
 /// ```
-/// use rusty_paserk::wrap::PieWrappedKey;
-/// use rusty_paserk::key::{Key, Local};
-/// use rusty_paseto::core::V4;
+/// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
 ///
 /// let wrapping_key = Key::<V4, Local>::new_random();
 ///
@@ -46,9 +44,7 @@ use crate::key::{write_b64, Key, KeyType, Local, Secret, Version};
 ///
 /// # Secret Wrapping
 /// ```
-/// use rusty_paserk::wrap::PieWrappedKey;
-/// use rusty_paserk::key::{Key, Local, Secret};
-/// use rusty_paseto::core::V4;
+/// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
 ///
 /// let wrapping_key = Key::<V4, Local>::new_random();
 ///
@@ -73,9 +69,7 @@ impl<V: PieVersion, K: WrapType<V>> Key<V, K> {
     ///
     /// # Local Wrapping
     /// ```
-    /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, Local};
-    /// use rusty_paseto::core::V4;
+    /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
     ///
     /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
@@ -91,9 +85,7 @@ impl<V: PieVersion, K: WrapType<V>> Key<V, K> {
     ///
     /// # Secret Wrapping
     /// ```
-    /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, Local, Secret};
-    /// use rusty_paseto::core::V4;
+    /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
     ///
     /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
@@ -165,9 +157,7 @@ where
     ///
     /// # Local Wrapping
     /// ```
-    /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, Local};
-    /// use rusty_paseto::core::V4;
+    /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
     ///
     /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
@@ -183,9 +173,7 @@ where
     ///
     /// # Secret Wrapping
     /// ```
-    /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, Local, Secret};
-    /// use rusty_paseto::core::V4;
+    /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
     ///
     /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
@@ -292,6 +280,7 @@ impl<V: PieVersion, K: WrapType<V>> fmt::Display for PieWrappedKey<V, K> {
     }
 }
 
+/// Version info for configuring PIE Key wrapping
 pub trait PieVersion: Version {
     type Cipher: StreamCipher + KeyIvInit;
     type AuthKeyMac: Mac + KeyInit;
@@ -303,6 +292,7 @@ pub trait PieVersion: Version {
     ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>);
 }
 
+#[cfg(feature = "v3")]
 impl PieVersion for V3 {
     type Cipher = ctr::Ctr64BE<aes::Aes256>;
     type AuthKeyMac = hmac::Hmac<sha2::Sha384>;
@@ -316,6 +306,7 @@ impl PieVersion for V3 {
     }
 }
 
+#[cfg(feature = "v4")]
 impl PieVersion for V4 {
     type Cipher = chacha20::XChaCha20;
     type AuthKeyMac = blake2::Blake2bMac<U32>;
@@ -329,6 +320,7 @@ impl PieVersion for V4 {
     }
 }
 
+/// Key wrap information (`local`/`secret`)
 pub trait WrapType<V: PieVersion>: KeyType<V> {
     const WRAP_HEADER: &'static str;
 
@@ -348,6 +340,7 @@ pub trait WrapType<V: PieVersion>: KeyType<V> {
     ) -> GenericArray<u8, Self::TotalLen>;
 }
 
+#[cfg(feature = "v3")]
 impl WrapType<V3> for Local {
     const WRAP_HEADER: &'static str = "local-wrap.";
 
@@ -373,6 +366,7 @@ impl WrapType<V3> for Local {
     }
 }
 
+#[cfg(feature = "v3")]
 impl WrapType<V3> for Secret {
     const WRAP_HEADER: &'static str = "secret-wrap.";
 
@@ -398,6 +392,7 @@ impl WrapType<V3> for Secret {
     }
 }
 
+#[cfg(feature = "v4")]
 impl WrapType<V4> for Local {
     const WRAP_HEADER: &'static str = "local-wrap.";
 
@@ -423,6 +418,7 @@ impl WrapType<V4> for Local {
     }
 }
 
+#[cfg(feature = "v4")]
 impl WrapType<V4> for Secret {
     const WRAP_HEADER: &'static str = "secret-wrap.";
 

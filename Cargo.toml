@@ -29,6 +29,7 @@ v3 = [
 ]
 # V4 is recommended
 v4 = [
+  "sha2",
   "blake2",
   "chacha20",
   "x25519-dalek",

@@ -16,23 +16,25 @@
 //! the unencrypted footer, rather than encrypting them.
 //!
 //! The use-cases that PASETO doesn't address out of the box are:
-//! 
+//!
 //! * Key-wrapping
 //! * Asymmetric encryption
 //! * Password-based key encryption
-//! 
+//!
 //! PASERK aims to provide an answer for these circumstances, as well as provide a
 //! consistent standard for the encoding of PASETO keys.
-//! 
+//!
 //! ## PASERK
-//! 
+//!
 //! A serialized key in PASERK has the format:
-//! 
-//!     k[version].[type].[data]
-//! 
+//!
+//! ```text
+//! k[version].[type].[data]
+//! ```
+//!
 //! Where `[version]` is an integer, `[data]` is the (*typically* base64url-encoded)
 //! payload data, and `[type]` is one of the items in the following table:
-//! 
+//!
 //! | PASERK Type   | Meaning                                                                     | PASETO Compatibility | \[data\] Encoded? | Safe in Footer? |
 //! |---------------|-----------------------------------------------------------------------------|----------------------|-------------------|-----------------|
 //! | `lid`         | Unique Identifier for a separate PASERK for `local` PASETOs.                | `local`              | Yes               | Yes             |
@@ -76,7 +78,7 @@
 //!
 //! You can also parse the KeyId from a string to have a smaller in memory representation. It can be safely shared and stored.
 //!
-//! ### Plaintext: `local`/`public`/`ssecret`
+//! ### Plaintext: `local`/`public`/`secret`
 //!
 //! The [`PlaintextKey`] type represents the base64 encoded plaintext key types.
 //!
@@ -106,7 +108,12 @@
 //!
 //! Not currently supported
 
-pub use rusty_paseto::core::{V3, V4};
+#[cfg(feature = "v3")]
+pub use rusty_paseto::core::V3;
+
+#[cfg(feature = "v4")]
+pub use rusty_paseto::core::V4;
+
 pub use id::KeyId;
 pub use key::{Key, KeyType, Local, PlaintextKey, Public, Secret, Version};
 pub use pke::{SealedKey, SealedVersion};
