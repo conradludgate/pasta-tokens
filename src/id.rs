@@ -33,119 +33,133 @@
 //! let kid = public_key.encode_id();
 //! // => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
 //! ```
-use generic_array::typenum::U33;
+use std::{fmt, marker::PhantomData, str::FromStr};
 
+use base64::URL_SAFE_NO_PAD;
+use generic_array::{typenum::U33, GenericArray};
+
+use rusty_paseto::core::PasetoError;
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
 
-/// Key ID encodings <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
-pub trait EncodeId {
-    /// encode the key into it's key id
-    fn encode_id(&self) -> String;
+use crate::key::{write_b64, Key, KeyType, Version};
+
+pub struct KeyId<V: Version, K: KeyType<V>> {
+    id: GenericArray<u8, U33>,
+    key: PhantomData<(V, K)>,
 }
 
-/// local-id <https://github.com/paseto-standard/paserk/blob/master/types/lid.md>
-mod local {
-    use rusty_paseto::core::{Local, PasetoSymmetricKey};
-
-    use super::*;
-
-    #[cfg(feature = "v3")]
-    impl EncodeId for PasetoSymmetricKey<V3, Local> {
-        fn encode_id(&self) -> String {
-            encode_v3("k3.lid.", "k3.local.", self.as_ref())
-        }
+impl<V: Version, K: KeyType<V>> fmt::Debug for KeyId<V, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(self, f)
     }
-
-    #[cfg(feature = "v4")]
-    impl EncodeId for PasetoSymmetricKey<V4, Local> {
-        fn encode_id(&self) -> String {
-            encode_v4("k4.lid.", "k4.local.", self.as_ref())
-        }
+}
+impl<V: Version, K: KeyType<V>> fmt::Display for KeyId<V, K> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(V::KEY_HEADER)?;
+        f.write_str(K::ID)?;
+        write_b64(&self.id, f)
     }
 }
 
-/// public-id <https://github.com/paseto-standard/paserk/blob/master/types/pid.md>
-/// secret-id <https://github.com/paseto-standard/paserk/blob/master/types/sid.md>
-mod public {
-    use rusty_paseto::core::{PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, Public};
+impl<V: Version, K: KeyType<V>> FromStr for KeyId<V, K> {
+    type Err = PasetoError;
 
-    use super::*;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s
+            .strip_prefix(V::KEY_HEADER)
+            .ok_or(PasetoError::WrongHeader)?;
+        let s = s.strip_prefix(K::ID).ok_or(PasetoError::WrongHeader)?;
 
-    #[cfg(feature = "v3")]
-    impl EncodeId for PasetoAsymmetricPrivateKey<'_, V3, Public> {
-        fn encode_id(&self) -> String {
-            encode_v3("k3.sid.", "k3.secret.", self.as_ref())
+        let mut id = GenericArray::<u8, U33>::default();
+        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut id)?;
+        if len != 33 {
+            return Err(PasetoError::PayloadBase64Decode {
+                source: base64::DecodeError::InvalidLength,
+            });
         }
-    }
 
-    #[cfg(feature = "v4")]
-    impl EncodeId for PasetoAsymmetricPrivateKey<'_, V4, Public> {
-        fn encode_id(&self) -> String {
-            encode_v4("k4.sid.", "k4.secret.", self.as_ref())
-        }
+        Ok(KeyId {
+            id,
+            key: PhantomData,
+        })
     }
+}
 
-    #[cfg(feature = "v3")]
-    impl EncodeId for PasetoAsymmetricPublicKey<'_, V3, Public> {
-        fn encode_id(&self) -> String {
-            encode_v3("k3.pid.", "k3.public.", self.as_ref())
-        }
+impl<V: Version, K: KeyType<V>> core::cmp::PartialOrd for KeyId<V, K> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
+}
+impl<V: Version, K: KeyType<V>> core::cmp::Ord for KeyId<V, K> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id.cmp(&other.id)
+    }
+}
+impl<V: Version, K: KeyType<V>> core::cmp::PartialEq for KeyId<V, K> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id.eq(&other.id)
+    }
+}
+impl<V: Version, K: KeyType<V>> core::cmp::Eq for KeyId<V, K> {}
+impl<V: Version, K: KeyType<V>> Clone for KeyId<V, K> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<V: Version, K: KeyType<V>> Copy for KeyId<V, K> {}
 
-    #[cfg(feature = "v4")]
-    impl EncodeId for PasetoAsymmetricPublicKey<'_, V4, Public> {
-        fn encode_id(&self) -> String {
-            encode_v4("k4.pid.", "k4.public.", self.as_ref())
+#[cfg(feature = "v3")]
+impl<K: KeyType<V3>> From<&Key<V3, K>> for KeyId<V3, K> {
+    fn from(key: &Key<V3, K>) -> Self {
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        use sha2::digest::Digest;
+
+        // V3 Public keys are 49 bytes, V3 private keys are 48 bytes, symmetric keys are 32 bytes.
+        // allocate enough space for 49 bytes base64 encoded which is ~66
+        let mut output = [0; 49 * 4 / 3 + 3];
+        let p = Base64UrlUnpadded::encode(key.as_ref(), &mut output).unwrap();
+
+        let mut derive_d = sha2::Sha384::new();
+        derive_d.update(V3::KEY_HEADER);
+        derive_d.update(K::ID);
+        derive_d.update(V3::KEY_HEADER);
+        derive_d.update(K::HEADER);
+        derive_d.update(p);
+        let d = derive_d.finalize();
+        let id = *GenericArray::from_slice(&d[..33]);
+
+        KeyId {
+            id,
+            key: PhantomData,
         }
     }
 }
 
-/// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-1-and-3>
-#[cfg(any(feature = "v1", feature = "v3"))]
-fn encode_v3(header: &str, header2: &str, key: &[u8]) -> String {
-    use base64ct::{Base64UrlUnpadded, Encoding};
-    use sha2::digest::Digest;
+#[cfg(feature = "v4")]
+impl<K: KeyType<V4>> From<&Key<V4, K>> for KeyId<V4, K> {
+    fn from(key: &Key<V4, K>) -> Self {
+        use base64ct::{Base64UrlUnpadded, Encoding};
+        use blake2::digest::Digest;
 
-    // V3 Public keys are 49 bytes, V3 private keys are 48 bytes, symmetric keys are 32 bytes.
-    // allocate enough space for 49 bytes base64 encoded which is ~66
-    let mut output = [0; 49 * 4 / 3 + 3];
-    let p = Base64UrlUnpadded::encode(key, &mut output).unwrap();
+        // V4 Public keys are 64 bytes, symmetric keys are 32 bytes.
+        // allocate enough space for 64 bytes base64 encoded
+        let mut output = [0; 64 * 4 / 3 + 3];
+        let p = Base64UrlUnpadded::encode(key.as_ref(), &mut output).unwrap();
 
-    let mut derive_d = sha2::Sha384::new();
-    derive_d.update(header);
-    derive_d.update(header2);
-    derive_d.update(p);
-    let d = derive_d.finalize();
-    let d = &d[..33];
+        let mut derive_d = blake2::Blake2b::<U33>::new();
+        derive_d.update(V4::KEY_HEADER);
+        derive_d.update(K::ID);
+        derive_d.update(V4::KEY_HEADER);
+        derive_d.update(K::HEADER);
+        derive_d.update(p);
+        let id = derive_d.finalize();
 
-    // > When base64url-encoded, d will produce an unpadded 44-byte string.
-    // 44 < output.len()
-    let b64d = Base64UrlUnpadded::encode(d, &mut output).unwrap();
-    format!("{header}{b64d}")
-}
-
-/// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md#versions-2-and-4>
-#[cfg(any(feature = "v2", feature = "v4"))]
-fn encode_v4(header: &str, header2: &str, key: &[u8]) -> String {
-    use base64ct::{Base64UrlUnpadded, Encoding};
-    use blake2::digest::Digest;
-
-    // Public keys are 32 bytes, private keys are 64 bytes, symmetric keys are 32 bytes.
-    // allocate enough space for 64 bytes base64 encoded which is ~86
-    let mut output = [0; 64 * 4 / 3 + 3];
-    let p = Base64UrlUnpadded::encode(key, &mut output).unwrap();
-
-    let mut derive_d = blake2::Blake2b::<U33>::new();
-    derive_d.update(header);
-    derive_d.update(header2);
-    derive_d.update(p);
-    let d = derive_d.finalize();
-
-    // > When base64url-encoded, d will produce an unpadded 44-byte string.
-    // 44 < output.len()
-    let b64d = Base64UrlUnpadded::encode(&d, &mut output).unwrap();
-    format!("{header}{b64d}")
+        KeyId {
+            id,
+            key: PhantomData,
+        }
+    }
 }

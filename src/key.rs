@@ -99,19 +99,23 @@ pub struct LocalKey;
 pub trait KeyType<V: Version> {
     type KeyLen: ArrayLength<u8>;
     const HEADER: &'static str;
+    const ID: &'static str;
 }
 
 impl<V: Version> KeyType<V> for PublicKey {
     type KeyLen = V::Public;
     const HEADER: &'static str = "public.";
+    const ID: &'static str = "pid.";
 }
 impl<V: Version> KeyType<V> for SecretKey {
     type KeyLen = V::Secret;
     const HEADER: &'static str = "secret.";
+    const ID: &'static str = "sid.";
 }
 impl<V: Version> KeyType<V> for LocalKey {
     type KeyLen = V::Local;
     const HEADER: &'static str = "local.";
+    const ID: &'static str = "lid.";
 }
 
 pub struct Key<V: Version, K: KeyType<V>> {
@@ -167,7 +171,7 @@ impl<V: Version, K: KeyType<V>> fmt::Display for PlaintextKey<V, K> {
     }
 }
 
-fn write_b64<W: fmt::Write>(b: &[u8], w: &mut W) -> fmt::Result {
+pub(crate) fn write_b64<W: fmt::Write>(b: &[u8], w: &mut W) -> fmt::Result {
     let mut buffer = [0; 64];
     for chunk in b.chunks(48) {
         let s = base64ct::Base64UrlUnpadded::encode(chunk, &mut buffer).unwrap();

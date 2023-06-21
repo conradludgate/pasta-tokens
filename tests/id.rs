@@ -1,8 +1,8 @@
-use rusty_paserk::id::EncodeId;
-use rusty_paseto::core::{
-    Key, Local, PasetoAsymmetricPrivateKey, PasetoAsymmetricPublicKey, PasetoSymmetricKey, Public,
-    V3, V4,
+use rusty_paserk::{
+    id::KeyId,
+    key::{Key, KeyType, LocalKey, PublicKey, SecretKey, Version},
 };
+use rusty_paseto::core::{V3, V4};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -18,21 +18,29 @@ struct TestFile {
     tests: Vec<Test>,
 }
 
-fn local_id<Version>(test_file: TestFile)
+fn id<V: Version, K: KeyType<V>>(test_file: TestFile)
 where
-    PasetoSymmetricKey<Version, Local>: EncodeId,
+    for<'a> KeyId<V, K>: From<&'a Key<V, K>>,
 {
     for test in test_file.tests {
         if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = PasetoSymmetricKey::<Version, Local>::from(Key::from(&*key));
-            let kid = key.encode_id();
+            let key: Key<V, K> = hex::decode(test.key)
+                .unwrap()
+                .as_slice()
+                .try_into()
+                .unwrap();
+            let kid: KeyId<V, K> = (&key).into();
+            let kid2: KeyId<V, K> = paserk.parse().unwrap();
+
+            assert_eq!(kid, kid2, "{} > {}: kid failed", test_file.name, test.name);
 
             assert_eq!(
-                kid, paserk,
+                kid.to_string(),
+                paserk,
                 "{} > {}: kid failed",
-                test_file.name, test.name
-            )
+                test_file.name,
+                test.name
+            );
         }
     }
 }
@@ -41,96 +49,39 @@ where
 fn local_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.lid.json")).unwrap();
-    local_id::<V3>(test_file);
+    id::<V3, LocalKey>(test_file);
 }
 
 #[test]
 fn local_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.lid.json")).unwrap();
-    local_id::<V4>(test_file);
+    id::<V4, LocalKey>(test_file);
 }
 
 #[test]
 fn public_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.pid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = Key::<49>::from(&*key);
-            let key = PasetoAsymmetricPublicKey::<V3, Public>::try_from(&key).unwrap();
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
+    id::<V3, PublicKey>(test_file);
 }
 
 #[test]
 fn public_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.pid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = Key::from(&*key);
-            let key = PasetoAsymmetricPublicKey::<V4, Public>::from(&key);
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
+    id::<V4, PublicKey>(test_file);
 }
-
 #[test]
 fn secret_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.sid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = Key::from(&*key);
-            let key = PasetoAsymmetricPrivateKey::<V3, Public>::from(&key);
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
+    id::<V3, SecretKey>(test_file);
 }
 
 #[test]
 fn secret_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.sid.json")).unwrap();
-
-    for test in test_file.tests {
-        if let Some(paserk) = test.paserk {
-            let key = hex::decode(test.key).unwrap();
-            let key = Key::from(&*key);
-            let key = PasetoAsymmetricPrivateKey::<V4, Public>::from(&key);
-            let kid = key.encode_id();
-
-            assert_eq!(
-                kid, paserk,
-                "{} > {}: kid failed",
-                test_file.name, test.name
-            )
-        }
-    }
+    id::<V4, SecretKey>(test_file);
 }
