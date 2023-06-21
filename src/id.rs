@@ -1,39 +1,3 @@
-//! This operation calculates the unique ID for a given PASERK.
-//!
-//! <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
-//!
-//! # Local IDs
-//! ```
-//! use rusty_paserk::id::KeyId;
-//! use rusty_paserk::key::{Key, LocalKey};
-//! use rusty_paseto::core::V4;
-//!
-//! let local_key = Key::<V4, LocalKey>::new_random();
-//! let kid: KeyId<V4, LocalKey> = local_key.into();
-//! // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
-//! ```
-//!
-//! # Secret IDs
-//! ```
-//! use rusty_paserk::id::KeyId;
-//! use rusty_paserk::key::{Key, SecretKey};
-//! use rusty_paseto::core::V4;
-//!
-//! let local_key = Key::<V4, SecretKey>::new_random();
-//! let kid: KeyId<V4, SecretKey> = local_key.into();
-//! // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
-//! ```
-//!
-//! # Public IDs
-//! ```
-//! use rusty_paserk::id::KeyId;
-//! use rusty_paserk::key::{Key, PublicKey};
-//! use rusty_paseto::core::V4;
-//!
-//! let local_key = Key::<V4, PublicKey>::new_random();
-//! let kid: KeyId<V4, PublicKey> = local_key.into();
-//! // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
-//! ```
 use std::{fmt, marker::PhantomData, str::FromStr};
 
 use base64::URL_SAFE_NO_PAD;
@@ -47,6 +11,42 @@ use rusty_paseto::core::V4;
 
 use crate::key::{write_b64, Key, KeyType, Version};
 
+/// Unique ID for a key
+///
+/// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
+///
+/// # Local IDs
+/// ```
+/// use rusty_paserk::id::KeyId;
+/// use rusty_paserk::key::{Key, Local};
+/// use rusty_paseto::core::V4;
+///
+/// let local_key = Key::<V4, Local>::new_random();
+/// let kid: KeyId<V4, Local> = local_key.into();
+/// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
+/// ```
+///
+/// # Secret IDs
+/// ```
+/// use rusty_paserk::id::KeyId;
+/// use rusty_paserk::key::{Key, Secret};
+/// use rusty_paseto::core::V4;
+///
+/// let local_key = Key::<V4, Secret>::new_random();
+/// let kid: KeyId<V4, Secret> = local_key.into();
+/// // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
+/// ```
+///
+/// # Public IDs
+/// ```
+/// use rusty_paserk::id::KeyId;
+/// use rusty_paserk::key::{Key, Public};
+/// use rusty_paseto::core::V4;
+///
+/// let local_key = Key::<V4, Public>::new_random();
+/// let kid: KeyId<V4, Public> = local_key.into();
+/// // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
+/// ```
 pub struct KeyId<V: Version, K: KeyType<V>> {
     id: GenericArray<u8, U33>,
     key: PhantomData<(V, K)>,

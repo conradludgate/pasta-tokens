@@ -21,7 +21,7 @@ use rusty_paseto::core::V3;
 use rusty_paseto::core::V4;
 use subtle::ConstantTimeEq;
 
-use crate::key::{write_b64, Key, KeyType, LocalKey, SecretKey, Version};
+use crate::key::{write_b64, Key, KeyType, Local, Secret, Version};
 
 /// Paragon Initiative Enterprises standard key-wrapping
 /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
@@ -29,17 +29,17 @@ use crate::key::{write_b64, Key, KeyType, LocalKey, SecretKey, Version};
 /// # Local Wrapping
 /// ```
 /// use rusty_paserk::wrap::PieWrappedKey;
-/// use rusty_paserk::key::{Key, LocalKey};
+/// use rusty_paserk::key::{Key, Local};
 /// use rusty_paseto::core::V4;
 ///
-/// let wrapping_key = Key::<V4, LocalKey>::new_random();
+/// let wrapping_key = Key::<V4, Local>::new_random();
 ///
-/// let local_key = Key::<V4, LocalKey>::new_random();
+/// let local_key = Key::<V4, Local>::new_random();
 ///
 /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
 /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
 ///
-/// let wrapped_local: PieWrappedKey<V4, LocalKey> = wrapped_local.parse().unwrap();
+/// let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
 /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
 /// assert_eq!(local_key, local_key2);
 /// ```
@@ -47,17 +47,17 @@ use crate::key::{write_b64, Key, KeyType, LocalKey, SecretKey, Version};
 /// # Secret Wrapping
 /// ```
 /// use rusty_paserk::wrap::PieWrappedKey;
-/// use rusty_paserk::key::{Key, LocalKey, SecretKey};
+/// use rusty_paserk::key::{Key, Local, Secret};
 /// use rusty_paseto::core::V4;
 ///
-/// let wrapping_key = Key::<V4, LocalKey>::new_random();
+/// let wrapping_key = Key::<V4, Local>::new_random();
 ///
-/// let secret_key = Key::<V4, SecretKey>::new_random();
+/// let secret_key = Key::<V4, Secret>::new_random();
 ///
 /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
 /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
 ///
-/// let wrapped_secret: PieWrappedKey<V4, SecretKey> = wrapped_secret.parse().unwrap();
+/// let wrapped_secret: PieWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
 /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
 /// assert_eq!(secret_key, secret_key2);
 /// ```
@@ -74,17 +74,17 @@ impl<V: PieVersion, K: WrapType<V>> Key<V, K> {
     /// # Local Wrapping
     /// ```
     /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, LocalKey};
+    /// use rusty_paserk::key::{Key, Local};
     /// use rusty_paseto::core::V4;
     ///
-    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
-    /// let local_key = Key::<V4, LocalKey>::new_random();
+    /// let local_key = Key::<V4, Local>::new_random();
     ///
     /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
     ///
-    /// let wrapped_local: PieWrappedKey<V4, LocalKey> = wrapped_local.parse().unwrap();
+    /// let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
     /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
     /// assert_eq!(local_key, local_key2);
     /// ```
@@ -92,21 +92,21 @@ impl<V: PieVersion, K: WrapType<V>> Key<V, K> {
     /// # Secret Wrapping
     /// ```
     /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, LocalKey, SecretKey};
+    /// use rusty_paserk::key::{Key, Local, Secret};
     /// use rusty_paseto::core::V4;
     ///
-    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
-    /// let secret_key = Key::<V4, SecretKey>::new_random();
+    /// let secret_key = Key::<V4, Secret>::new_random();
     ///
     /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
     ///
-    /// let wrapped_secret: PieWrappedKey<V4, SecretKey> = wrapped_secret.parse().unwrap();
+    /// let wrapped_secret: PieWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
     /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
-    pub fn wrap_pie(&self, wrapping_key: &Key<V, LocalKey>) -> PieWrappedKey<V, K> {
+    pub fn wrap_pie(&self, wrapping_key: &Key<V, Local>) -> PieWrappedKey<V, K> {
         // step 1: Enforce Algorithm Lucidity
         // asserted by the caller.
 
@@ -166,17 +166,17 @@ where
     /// # Local Wrapping
     /// ```
     /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, LocalKey};
+    /// use rusty_paserk::key::{Key, Local};
     /// use rusty_paseto::core::V4;
     ///
-    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
-    /// let local_key = Key::<V4, LocalKey>::new_random();
+    /// let local_key = Key::<V4, Local>::new_random();
     ///
     /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
     ///
-    /// let wrapped_local: PieWrappedKey<V4, LocalKey> = wrapped_local.parse().unwrap();
+    /// let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
     /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
     /// assert_eq!(local_key, local_key2);
     /// ```
@@ -184,21 +184,21 @@ where
     /// # Secret Wrapping
     /// ```
     /// use rusty_paserk::wrap::PieWrappedKey;
-    /// use rusty_paserk::key::{Key, LocalKey, SecretKey};
+    /// use rusty_paserk::key::{Key, Local, Secret};
     /// use rusty_paseto::core::V4;
     ///
-    /// let wrapping_key = Key::<V4, LocalKey>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_random();
     ///
-    /// let secret_key = Key::<V4, SecretKey>::new_random();
+    /// let secret_key = Key::<V4, Secret>::new_random();
     ///
     /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
     ///
-    /// let wrapped_secret: PieWrappedKey<V4, SecretKey> = wrapped_secret.parse().unwrap();
+    /// let wrapped_secret: PieWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
     /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
-    pub fn unwrap(self, wrapping_key: &Key<V, LocalKey>) -> Result<Key<V, K>, PasetoError> {
+    pub fn unwrap(self, wrapping_key: &Key<V, Local>) -> Result<Key<V, K>, PasetoError> {
         let Self {
             mut wrapped_key,
             nonce,
@@ -348,7 +348,7 @@ pub trait WrapType<V: PieVersion>: KeyType<V> {
     ) -> GenericArray<u8, Self::TotalLen>;
 }
 
-impl WrapType<V3> for LocalKey {
+impl WrapType<V3> for Local {
     const WRAP_HEADER: &'static str = "local-wrap.";
 
     // 32 + 48 + 32 = 112
@@ -373,7 +373,7 @@ impl WrapType<V3> for LocalKey {
     }
 }
 
-impl WrapType<V3> for SecretKey {
+impl WrapType<V3> for Secret {
     const WRAP_HEADER: &'static str = "secret-wrap.";
 
     // 32 + 48 + 48 = 128
@@ -398,7 +398,7 @@ impl WrapType<V3> for SecretKey {
     }
 }
 
-impl WrapType<V4> for LocalKey {
+impl WrapType<V4> for Local {
     const WRAP_HEADER: &'static str = "local-wrap.";
 
     // 32 + 32 + 32 = 96
@@ -423,7 +423,7 @@ impl WrapType<V4> for LocalKey {
     }
 }
 
-impl WrapType<V4> for SecretKey {
+impl WrapType<V4> for Secret {
     const WRAP_HEADER: &'static str = "secret-wrap.";
 
     // 32 + 32 + 64 = 128

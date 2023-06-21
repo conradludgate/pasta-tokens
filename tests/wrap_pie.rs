@@ -1,7 +1,4 @@
-use rusty_paserk::{
-    key::{Key, LocalKey, SecretKey},
-    wrap::{PieVersion, PieWrappedKey, WrapType},
-};
+use rusty_paserk::{Key, Local, PieVersion, PieWrappedKey, Secret, WrapType};
 use rusty_paseto::core::{V3, V4};
 use serde::Deserialize;
 
@@ -30,7 +27,7 @@ where
 {
     for test in test_file.tests {
         let wrapping = hex::decode(test.wrapping_key).unwrap();
-        let wrapping_key = Key::<V, LocalKey>::try_from(&*wrapping).unwrap();
+        let wrapping_key = Key::<V, Local>::try_from(&*wrapping).unwrap();
 
         if test.expect_fail {
             let Ok(wrapped_key): Result<PieWrappedKey<V, K>, _> = test.paserk.parse() else {
@@ -76,26 +73,26 @@ where
 fn local_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.local-wrap.pie.json")).unwrap();
-    wrap_test::<V3, LocalKey>(test_file);
+    wrap_test::<V3, Local>(test_file);
 }
 
 #[test]
 fn local_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.local-wrap.pie.json")).unwrap();
-    wrap_test::<V4, LocalKey>(test_file);
+    wrap_test::<V4, Local>(test_file);
 }
 
 #[test]
 fn secret_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.secret-wrap.pie.json")).unwrap();
-    wrap_test::<V3, SecretKey>(test_file);
+    wrap_test::<V3, Secret>(test_file);
 }
 
 #[test]
 fn secret_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.secret-wrap.pie.json")).unwrap();
-    wrap_test::<V4, SecretKey>(test_file);
+    wrap_test::<V4, Secret>(test_file);
 }

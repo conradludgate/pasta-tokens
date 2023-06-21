@@ -1,6 +1,6 @@
-use std::{fmt, io::Write, str::FromStr};
+use std::{fmt, str::FromStr};
 
-use base64::{decode_config_slice, write::EncoderStringWriter, URL_SAFE_NO_PAD};
+use base64::URL_SAFE_NO_PAD;
 use base64ct::Encoding;
 use cipher::Unsigned;
 use generic_array::{
@@ -14,59 +14,6 @@ use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
 
-/// Key encodings
-pub trait EncodeKey: Sized {
-    fn encode_key(&self) -> String;
-
-    fn decode_key(key: &str) -> Result<Self, PasetoError>;
-}
-
-/// local <https://github.com/paseto-standard/paserk/blob/master/types/local.md>
-mod local {
-    use rusty_paseto::core::{Key, Local, PasetoSymmetricKey};
-
-    use super::*;
-
-    #[cfg(feature = "v3")]
-    impl EncodeKey for PasetoSymmetricKey<V3, Local> {
-        fn encode_key(&self) -> String {
-            encode_b64("k3.local.", self.as_ref())
-        }
-        fn decode_key(key: &str) -> Result<Self, PasetoError> {
-            decode_b64("k3.local.", key)
-                .map(Key::from)
-                .map(PasetoSymmetricKey::from)
-        }
-    }
-
-    #[cfg(feature = "v4")]
-    impl EncodeKey for PasetoSymmetricKey<V4, Local> {
-        fn encode_key(&self) -> String {
-            encode_b64("k4.local.", self.as_ref())
-        }
-        fn decode_key(key: &str) -> Result<Self, PasetoError> {
-            decode_b64("k4.local.", key)
-                .map(Key::from)
-                .map(PasetoSymmetricKey::from)
-        }
-    }
-}
-
-fn encode_b64(header: &str, key: &[u8]) -> String {
-    let mut enc = EncoderStringWriter::from(header.to_owned(), base64::URL_SAFE_NO_PAD);
-    enc.write_all(key).unwrap();
-    enc.into_inner()
-}
-
-fn decode_b64(header: &str, key: &str) -> Result<[u8; 32], PasetoError> {
-    let key = key.strip_prefix(header).ok_or(PasetoError::WrongHeader)?;
-    let mut output = [0; 32];
-    if decode_config_slice(key, base64::URL_SAFE_NO_PAD, &mut output)? < 32 {
-        return Err(PasetoError::InvalidKey);
-    }
-    Ok(output)
-}
-
 pub trait Version {
     type Local: ArrayLength<u8>;
     type Public: ArrayLength<u8>;
@@ -78,7 +25,9 @@ pub trait Version {
 #[cfg(feature = "v3")]
 impl Version for V3 {
     type Local = U32;
+    /// P-384 Public Key in compressed format
     type Public = U49;
+    /// P-384 Secret Key (384 bits = 48 bytes)
     type Secret = U48;
     const TOKEN_HEADER: &'static str = "v3.";
     const KEY_HEADER: &'static str = "k3.";
@@ -87,15 +36,17 @@ impl Version for V3 {
 #[cfg(feature = "v3")]
 impl Version for V4 {
     type Local = U32;
+    /// Compressed edwards y point
     type Public = U32;
+    /// Ed25519 scalar key, concatenated with the public key bytes
     type Secret = U64;
     const TOKEN_HEADER: &'static str = "v4.";
     const KEY_HEADER: &'static str = "k4.";
 }
 
-pub struct PublicKey;
-pub struct SecretKey;
-pub struct LocalKey;
+pub struct Public;
+pub struct Secret;
+pub struct Local;
 
 pub trait KeyType<V: Version> {
     type KeyLen: ArrayLength<u8>;
@@ -103,24 +54,27 @@ pub trait KeyType<V: Version> {
     const ID: &'static str;
 }
 
-impl<V: Version> KeyType<V> for PublicKey {
+impl<V: Version> KeyType<V> for Public {
     type KeyLen = V::Public;
     const HEADER: &'static str = "public.";
     const ID: &'static str = "pid.";
 }
-impl<V: Version> KeyType<V> for SecretKey {
+impl<V: Version> KeyType<V> for Secret {
     type KeyLen = V::Secret;
     const HEADER: &'static str = "secret.";
     const ID: &'static str = "sid.";
 }
-impl<V: Version> KeyType<V> for LocalKey {
+impl<V: Version> KeyType<V> for Local {
     type KeyLen = V::Local;
     const HEADER: &'static str = "local.";
     const ID: &'static str = "lid.";
 }
 
+/// A PASETO key.
+///
+/// It is versioned and typed to ensure that [`Local`], [`Public`] and [`Secret`] keys are not used interchangably.
 pub struct Key<V: Version, K: KeyType<V>> {
-    key: GenericArray<u8, K::KeyLen>,
+    pub(crate) key: GenericArray<u8, K::KeyLen>,
 }
 
 impl<V: Version, K: KeyType<V>> core::cmp::PartialEq for Key<V, K> {
@@ -136,16 +90,24 @@ impl<V: Version, K: KeyType<V>> Clone for Key<V, K> {
         }
     }
 }
-impl Copy for Key<V3, LocalKey> {}
-impl Copy for Key<V4, LocalKey> {}
-impl Copy for Key<V3, PublicKey> {}
-impl Copy for Key<V4, PublicKey> {}
-impl Copy for Key<V3, SecretKey> {}
-impl Copy for Key<V4, SecretKey> {}
+impl Copy for Key<V3, Local> {}
+impl Copy for Key<V4, Local> {}
+impl Copy for Key<V3, Public> {}
+impl Copy for Key<V4, Public> {}
+impl Copy for Key<V3, Secret> {}
+impl Copy for Key<V4, Secret> {}
 
 impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Key").finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "v3")]
+impl Key<V3, Secret> {
+    pub fn from_sec1_pem(s: &str) -> Result<Self, PasetoError> {
+        let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::Cryption)?;
+        Ok(Self { key: sk.to_bytes() })
     }
 }
 
@@ -161,6 +123,7 @@ impl<V: Version, K: KeyType<V>> TryFrom<&[u8]> for Key<V, K> {
         Ok(Key { key })
     }
 }
+
 impl<V: Version, K: KeyType<V>> From<GenericArray<u8, K::KeyLen>> for Key<V, K> {
     fn from(key: GenericArray<u8, K::KeyLen>) -> Self {
         Self { key }
@@ -218,5 +181,53 @@ impl<V: Version, K: KeyType<V>> FromStr for PlaintextKey<V, K> {
         }
 
         Ok(PlaintextKey(Key { key }))
+    }
+}
+
+impl From<Key<V4, Local>>
+    for rusty_paseto::core::PasetoSymmetricKey<V4, rusty_paseto::core::Local>
+{
+    fn from(key: Key<V4, Local>) -> Self {
+        let key: [u8; 32] = key.key.into();
+        let key: rusty_paseto::core::Key<32> = key.into();
+        key.into()
+    }
+}
+
+impl From<Key<V3, Local>>
+    for rusty_paseto::core::PasetoSymmetricKey<V3, rusty_paseto::core::Local>
+{
+    fn from(key: Key<V3, Local>) -> Self {
+        let key: [u8; 32] = key.key.into();
+        let key: rusty_paseto::core::Key<32> = key.into();
+        key.into()
+    }
+}
+
+impl From<Key<V4, Public>> for rusty_paseto::core::Key<32> {
+    fn from(key: Key<V4, Public>) -> Self {
+        let key: [u8; 32] = key.key.into();
+        key.into()
+    }
+}
+
+impl From<Key<V4, Secret>> for rusty_paseto::core::Key<64> {
+    fn from(key: Key<V4, Secret>) -> Self {
+        let key: [u8; 64] = key.key.into();
+        key.into()
+    }
+}
+
+impl From<Key<V3, Public>> for rusty_paseto::core::Key<49> {
+    fn from(key: Key<V3, Public>) -> Self {
+        let key: [u8; 49] = key.key.into();
+        key.into()
+    }
+}
+
+impl From<Key<V3, Secret>> for rusty_paseto::core::Key<48> {
+    fn from(key: Key<V3, Secret>) -> Self {
+        let key: [u8; 48] = key.key.into();
+        key.into()
     }
 }

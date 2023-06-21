@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use rusty_paserk::key::{Key, KeyType, LocalKey, PlaintextKey, PublicKey, SecretKey, Version};
+use rusty_paserk::{Key, KeyType, Local, PlaintextKey, Public, Secret, Version};
 use rusty_paseto::core::{V3, V4};
 use serde::Deserialize;
 
@@ -64,40 +64,40 @@ fn key<V: Version, K: KeyType<V>>(test_file: TestFile) {
 fn local_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.local.json")).unwrap();
-    key::<V3, LocalKey>(test_file);
+    key::<V3, Local>(test_file);
 }
 
 #[test]
 fn local_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.local.json")).unwrap();
-    key::<V4, LocalKey>(test_file);
+    key::<V4, Local>(test_file);
 }
 
 #[test]
 fn public_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.public.json")).unwrap();
-    key::<V3, PublicKey>(test_file);
+    key::<V3, Public>(test_file);
 }
 
 #[test]
 fn public_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.public.json")).unwrap();
-    key::<V4, PublicKey>(test_file);
+    key::<V4, Public>(test_file);
 }
 
 #[test]
 fn secret_v3() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k3.secret.json")).unwrap();
-    key::<V3, SecretKey>(test_file);
+    key::<V3, Secret>(test_file);
 }
 
 #[test]
 fn secret_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.secret.json")).unwrap();
-    key::<V4, SecretKey>(test_file);
+    key::<V4, Secret>(test_file);
 }
