@@ -125,6 +125,9 @@ mod pbkw;
 mod pke;
 mod wrap;
 
+/// Whether the key serialization is safe to be added to a PASETO footer.
+pub trait SafeForFooter {}
+
 #[cfg(any(test, fuzzing))]
 pub mod fuzzing {
     use rand::{CryptoRng, RngCore};

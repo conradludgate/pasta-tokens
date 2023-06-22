@@ -158,3 +158,10 @@ impl<K: KeyType<V4>> From<Key<V4, K>> for KeyId<V4, K> {
         }
     }
 }
+
+impl<V, K> super::SafeForFooter for KeyId<V, K>
+where
+    V: Version,
+    K: KeyType<V>,
+{
+}

@@ -63,6 +63,13 @@ pub struct PieWrappedKey<V: PieVersion, K: KeyType<V>> {
     wrapped_key: GenericArray<u8, K::KeyLen>,
 }
 
+impl<V, K> super::SafeForFooter for PieWrappedKey<V, K>
+where
+    V: PieVersion,
+    K: PieWrapType<V>,
+{
+}
+
 impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     /// Paragon Initiative Enterprises standard key-wrapping
     /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
@@ -293,17 +300,23 @@ impl<V: PieVersion, K: PieWrapType<V>> fmt::Display for PieWrappedKey<V, K> {
 
 /// Version info for configuring PIE Key wrapping
 pub trait PieVersion: Version {
+    #[doc(hidden)]
     type Cipher: StreamCipher + KeyIvInit;
+    #[doc(hidden)]
     type AuthKeyMac: Mac + KeyInit;
+    #[doc(hidden)]
     type EncKeyMac: Mac + KeyInit;
+    #[doc(hidden)]
     type TagMac: Mac
         + KeyInit
         + OutputSizeUser<OutputSize = <Self::Tag as GenericSequence<u8>>::Length>;
 
+    #[doc(hidden)]
     type Tag: Concat<u8, U32, Rest = GenericArray<u8, U32>, Output = Self::TagIv>
         + From<digest::Output<Self::TagMac>>
         + DerefMut<Target = [u8]>
         + Copy;
+    #[doc(hidden)]
     type TagIv: Split<
         u8,
         <Self::Tag as GenericSequence<u8>>::Length,
@@ -311,6 +324,7 @@ pub trait PieVersion: Version {
         Second = GenericArray<u8, U32>,
     >;
 
+    #[doc(hidden)]
     fn split_enc_key(
         ek: digest::Output<Self::EncKeyMac>,
     ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>);
@@ -365,6 +379,7 @@ impl WrapType for Secret {
 
 /// Helper trait for configuring the key wrapping
 pub trait PieWrapType<V: PieVersion>: KeyType<V> + WrapType {
+    #[doc(hidden)]
     type Output: Split<
             u8,
             <V::TagIv as GenericSequence<u8>>::Length,
@@ -372,6 +387,7 @@ pub trait PieWrapType<V: PieVersion>: KeyType<V> + WrapType {
             Second = GenericArray<u8, Self::KeyLen>,
         > + Default
         + DerefMut<Target = [u8]>;
+    #[doc(hidden)]
     type TagIv: From<V::TagIv>
         + Concat<u8, Self::KeyLen, Rest = GenericArray<u8, Self::KeyLen>, Output = Self::Output>;
 }

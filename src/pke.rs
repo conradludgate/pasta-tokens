@@ -30,6 +30,8 @@ pub struct SealedKey<V: SealedVersion> {
     encrypted_data_key: GenericArray<u8, V::Local>,
 }
 
+impl<V> super::SafeForFooter for SealedKey<V> where V: SealedVersion {}
+
 impl<V: SealedVersion> Key<V, Local> {
     /// This PASERK is a secret key intended for local PASETOs, encrypted with an asymmetric wrapping key.
     pub fn seal(&self, sealing_key: &Key<V, Public>) -> SealedKey<V> {
