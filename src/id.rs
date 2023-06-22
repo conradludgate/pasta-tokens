@@ -24,21 +24,15 @@ use crate::key::{write_b64, Key, KeyType, Version};
 /// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
 /// ```
 ///
-/// # Secret IDs
+/// # Public/Secret IDs
 /// ```
-/// use rusty_paserk::{KeyId, Key, Secret, V4};
+/// use rusty_paserk::{KeyId, Key, Secret, Public, V4};
 ///
-/// let local_key = Key::<V4, Secret>::new_random();
-/// let kid: KeyId<V4, Secret> = local_key.into();
+/// let secret_key = Key::<V4, Secret>::new_random();
+/// let kid: KeyId<V4, Secret> = secret_key.into();
 /// // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
-/// ```
 ///
-/// # Public IDs
-/// ```
-/// use rusty_paserk::{KeyId, Key, Public, V4};
-///
-/// let local_key = Key::<V4, Public>::new_random();
-/// let kid: KeyId<V4, Public> = local_key.into();
+/// let kid: KeyId<V4, Public> = secret_key.public_key().into();
 /// // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
 /// ```
 pub struct KeyId<V: Version, K: KeyType<V>> {

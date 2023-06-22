@@ -96,17 +96,64 @@
 //!
 //! Using a public key, you can seal a local key. Using the corresponding private key, you can unseal the key again.
 //!
+//! ```
+//! use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
+//!
+//! let key = Key::<V4, Local>::new_random();
+//!
+//! let secret_key = Key::<V4, Secret>::new_random();
+//! let public_key = secret_key.public_key();
+//!
+//! let sealed = key.seal(&public_key).to_string();
+//! // => "k4.seal.23KlrMHZLW4muL75Rnuqtaro9F16mqDNvmCbgDXi2IdNyWmjrbTVBEih1DhSI_5xp7b7mCHSFo1DMv-9GtZUSpyi4646XBxpbFShHjJihF_Af8maWsDqdzOof76ia0Cv"
+//!
+//! let sealed: SealedKey<V4> = sealed.parse().unwrap();
+//! let key2 = sealed.unseal(&secret_key).unwrap();
+//! assert_eq!(key, key2);
+//! ```
+//!
 //! See the [`SealedKey`] type for more info.
 //!
 //! ### Wrap `local-wrap`/`secret-wrap`
 //!
 //! Using a local key, you can wrap a local or a secret key. It can be unwrapped using the same local key.
 //!
+//! ```
+//! use rusty_paserk::{PieWrappedKey, Key, Local, V4};
+//!
+//! let wrapping_key = Key::<V4, Local>::new_random();
+//!
+//! let local_key = Key::<V4, Local>::new_random();
+//!
+//! let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
+//! // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
+//!
+//! let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
+//! let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+//! assert_eq!(local_key, local_key2);
+//! ```
+//!
 //! See the [`PieWrappedKey`] type for more info.
 //!
 //! ### Password wrapping `local-pw`/`secret-pw`
 //!
 //! Using a password, you can wrap a local or a secret key. It can be unwrapped using the same password.
+//!
+//! ```
+//! use rusty_paserk::{PwWrappedKey, Key, Local, Secret, V4, Argon2State};
+//!
+//! let password = "hunter2";
+//!
+//! let secret_key = Key::<V4, Secret>::new_random();
+//! let wrap_state = Argon2State::default();
+//!
+//! let wrapped_secret = secret_key.pw_wrap(password.as_bytes(), wrap_state).to_string();
+//! // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
+//!
+//! let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
+//! let secret_key2 = wrapped_secret.unwrap(password.as_bytes()).unwrap();
+//! assert_eq!(secret_key, secret_key2);
+//! ```
 //!
 //! See the [`PwWrappedKey`] type for more info.
 

@@ -24,6 +24,24 @@ use rusty_paseto::core::V4;
 use crate::key::{write_b64, Key, Local, Public, Secret, Version};
 
 /// A local key encrypted with an asymmetric wrapping key.
+/// <https://github.com/paseto-standard/paserk/blob/master/operations/PKE.md>
+///
+/// # Secret Wrapping
+/// ```
+/// use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
+///
+/// let key = Key::<V4, Local>::new_random();
+///
+/// let secret_key = Key::<V4, Secret>::new_random();
+/// let public_key = secret_key.public_key();
+///
+/// let sealed = key.seal(&public_key).to_string();
+/// // => "k4.seal.23KlrMHZLW4muL75Rnuqtaro9F16mqDNvmCbgDXi2IdNyWmjrbTVBEih1DhSI_5xp7b7mCHSFo1DMv-9GtZUSpyi4646XBxpbFShHjJihF_Af8maWsDqdzOof76ia0Cv"
+///
+/// let sealed: SealedKey<V4> = sealed.parse().unwrap();
+/// let key2 = sealed.unseal(&secret_key).unwrap();
+/// assert_eq!(key, key2);
+/// ```
 pub struct SealedKey<V: SealedVersion> {
     tag: GenericArray<u8, V::TagLen>,
     ephemeral_public_key: GenericArray<u8, V::EpkLen>,
@@ -33,7 +51,25 @@ pub struct SealedKey<V: SealedVersion> {
 impl<V> super::SafeForFooter for SealedKey<V> where V: SealedVersion {}
 
 impl<V: SealedVersion> Key<V, Local> {
-    /// This PASERK is a secret key intended for local PASETOs, encrypted with an asymmetric wrapping key.
+    /// A local key encrypted with an asymmetric wrapping key.
+    /// <https://github.com/paseto-standard/paserk/blob/master/operations/PKE.md>
+    ///
+    /// # Secret Wrapping
+    /// ```
+    /// use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
+    ///
+    /// let key = Key::<V4, Local>::new_random();
+    ///
+    /// let secret_key = Key::<V4, Secret>::new_random();
+    /// let public_key = secret_key.public_key();
+    ///
+    /// let sealed = key.seal(&public_key).to_string();
+    /// // => "k4.seal.23KlrMHZLW4muL75Rnuqtaro9F16mqDNvmCbgDXi2IdNyWmjrbTVBEih1DhSI_5xp7b7mCHSFo1DMv-9GtZUSpyi4646XBxpbFShHjJihF_Af8maWsDqdzOof76ia0Cv"
+    ///
+    /// let sealed: SealedKey<V4> = sealed.parse().unwrap();
+    /// let key2 = sealed.unseal(&secret_key).unwrap();
+    /// assert_eq!(key, key2);
+    /// ```
     pub fn seal(&self, sealing_key: &Key<V, Public>) -> SealedKey<V> {
         self.seal_with_rng(sealing_key, &mut OsRng)
     }

@@ -215,11 +215,24 @@ impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
     }
 }
 
-impl<V: Version, K: KeyType<V>> Key<V, K> {
+impl<V: Version> Key<V, Local> {
     pub fn new_random() -> Self {
-        let mut key = GenericArray::<u8, K::KeyLen>::default();
+        let mut key = GenericArray::<u8, V::Local>::default();
         OsRng.fill_bytes(&mut key);
         Self { key }
+    }
+}
+
+#[cfg(feature = "v4")]
+impl Key<V4, Secret> {
+    pub fn new_random() -> Self {
+        let mut key = [0; 32];
+        OsRng.fill_bytes(&mut key);
+        Self {
+            key: ed25519_dalek::SigningKey::from_bytes(&key)
+                .to_keypair_bytes()
+                .into(),
+        }
     }
 }
 
