@@ -156,6 +156,11 @@
 //!
 //! See the [`PwWrappedKey`] type for more info.
 
+use std::ops::DerefMut;
+
+use base64ct::Encoding;
+use cipher::Unsigned;
+use generic_array::sequence::GenericSequence;
 #[cfg(feature = "v3")]
 pub use rusty_paseto::core::V3;
 
@@ -188,14 +193,40 @@ pub mod internal {
     pub use crate::wrap::{PieVersion, PieWrapType, WrapType};
 }
 
-pub(crate) fn write_b64<W: std::fmt::Write>(b: &[u8], w: &mut W) -> std::fmt::Result {
-    use base64ct::Encoding;
+fn write_b64<W: std::fmt::Write>(b: &[u8], w: &mut W) -> std::fmt::Result {
     let mut buffer = [0; 64];
     for chunk in b.chunks(48) {
         let s = base64ct::Base64UrlUnpadded::encode(chunk, &mut buffer).unwrap();
         w.write_str(s)?;
     }
     Ok(())
+}
+
+fn read_b64<L: GenericSequence<u8> + DerefMut<Target = [u8]> + Default>(
+    s: &str,
+) -> Result<L, PasetoError> {
+    let expected_len = (s.len() + 3) / 4 * 3;
+    if expected_len < <L::Length as Unsigned>::USIZE {
+        return Err(PasetoError::PayloadBase64Decode {
+            source: base64::DecodeError::InvalidLength,
+        });
+    }
+
+    let mut total = L::default();
+
+    let len = base64ct::Base64UrlUnpadded::decode(s, &mut total)
+        .map_err(|_| PasetoError::PayloadBase64Decode {
+            source: base64::DecodeError::InvalidLength,
+        })?
+        .len();
+
+    if len != <L::Length as Unsigned>::USIZE {
+        return Err(PasetoError::PayloadBase64Decode {
+            source: base64::DecodeError::InvalidLength,
+        });
+    }
+
+    Ok(total)
 }
 
 /// Whether the key serialization is safe to be added to a PASETO footer.

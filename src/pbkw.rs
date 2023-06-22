@@ -5,8 +5,7 @@
 
 use std::{fmt, ops::DerefMut, str::FromStr};
 
-use base64::URL_SAFE_NO_PAD;
-use cipher::{IvSizeUser, KeyInit, KeyIvInit, StreamCipher, Unsigned};
+use cipher::{IvSizeUser, KeyInit, KeyIvInit, StreamCipher};
 use digest::{Digest, Mac, OutputSizeUser};
 use generic_array::{
     sequence::{Concat, GenericSequence, Split},
@@ -23,7 +22,7 @@ use rusty_paseto::core::V3;
 use rusty_paseto::core::V4;
 use subtle::ConstantTimeEq;
 
-use crate::{write_b64, Key, KeyType, Local, Secret, Version};
+use crate::{read_b64, write_b64, Key, KeyType, Local, Secret, Version};
 
 /// Password wrapped keys
 ///
@@ -211,13 +210,7 @@ impl<V: PwVersion, K: PwWrapType<V>> FromStr for PwWrappedKey<V, K> {
             .strip_prefix(K::WRAP_HEADER)
             .ok_or(PasetoError::WrongHeader)?;
 
-        let mut total = K::SaltStateIvEdkTag::default();
-        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut total)?;
-        if len != <<K::SaltStateIvEdkTag as GenericSequence<u8>>::Length as Unsigned>::USIZE {
-            return Err(PasetoError::PayloadBase64Decode {
-                source: base64::DecodeError::InvalidLength,
-            });
-        }
+        let total = read_b64::<K::SaltStateIvEdkTag>(s)?;
 
         let (salt_state_nonce_edk, tag) = total.split();
         let (salt_state_nonce, edk) = salt_state_nonce_edk.split();

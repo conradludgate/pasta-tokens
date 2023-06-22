@@ -5,8 +5,7 @@
 
 use std::{fmt, str::FromStr};
 
-use base64::URL_SAFE_NO_PAD;
-use cipher::{inout::InOutBuf, KeyIvInit, StreamCipher, Unsigned};
+use cipher::{inout::InOutBuf, KeyIvInit, StreamCipher};
 use digest::{Digest, Mac};
 use generic_array::{
     sequence::{Concat, Split},
@@ -21,7 +20,7 @@ use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
 
-use crate::{write_b64, Key, Local, Public, Secret, Version};
+use crate::{read_b64, write_b64, Key, Local, Public, Secret, Version};
 
 /// A local key encrypted with an asymmetric wrapping key.
 ///
@@ -408,20 +407,7 @@ impl<V: SealedVersion> FromStr for SealedKey<V> {
             .ok_or(PasetoError::WrongHeader)?;
         let s = s.strip_prefix("seal.").ok_or(PasetoError::WrongHeader)?;
 
-        let mut total = GenericArray::<u8, V::TotalLen>::default();
-        let expected_len = (s.len() + 3) / 4 * 3;
-        if expected_len != <V::TotalLen as Unsigned>::USIZE {
-            return Err(PasetoError::PayloadBase64Decode {
-                source: base64::DecodeError::InvalidLength,
-            });
-        }
-
-        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut total)?;
-        if len != <V::TotalLen as Unsigned>::USIZE {
-            return Err(PasetoError::PayloadBase64Decode {
-                source: base64::DecodeError::InvalidLength,
-            });
-        }
+        let total = read_b64::<GenericArray<u8, V::TotalLen>>(s)?;
 
         Ok(V::split_total(total))
     }
