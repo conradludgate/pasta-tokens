@@ -24,6 +24,7 @@ v3 = [
   "ctr",
   "sha2",
   "p384",
+  "pbkdf2",
   "rusty_paseto/v3_local",
   "rusty_paseto/v3_public",
 ]
@@ -35,6 +36,7 @@ v4 = [
   "x25519-dalek",
   "ed25519-dalek",
   "curve25519-dalek",
+  "argon2",
   "rusty_paseto/v4_local",
   "rusty_paseto/v4_public"
 ]
@@ -47,7 +49,6 @@ base64ct = "1.6.0"
 base64 = "0.13.0"
 cipher = "0.4.4"
 digest = { version = "0.10.7", features = ["mac"] }
-pbkdf2 = "0.12.1"
 rand = "0.8.5"
 
 # V4
@@ -56,6 +57,7 @@ blake2 = { version = "0.10.6", optional = true }
 x25519-dalek = { version = "2.0.0-rc.2", features = ["static_secrets"], optional = true }
 ed25519-dalek = { version = "2.0.0-rc.2", optional = true }
 curve25519-dalek = { version = "4.0.0-rc.2", optional = true }
+argon2 = { version = "0.5.0", optional = true }
 
 # V3
 aes = { version = "0.8.2", optional = true }
@@ -63,6 +65,7 @@ ctr = { version = "0.9.2", optional = true }
 hmac = { version = "0.12.1", optional = true }
 sha2 = { version = "0.10.2", optional = true }
 p384 = { version = "0.13.0", optional = true, features = ["ecdh"] }
+pbkdf2 = { version = "0.12.1", optional = true }
 
 [dev-dependencies]
 rand = "0.8"

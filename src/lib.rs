@@ -120,7 +120,7 @@ pub use pke::{SealedKey, SealedVersion};
 pub use wrap::{PieVersion, PieWrappedKey, WrapType};
 
 mod id;
-// mod pbkw;
+mod pbkw;
 mod key;
 mod pke;
 mod wrap;
