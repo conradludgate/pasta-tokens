@@ -1,12 +1,12 @@
 [package]
 name = "rusty_paserk"
-version = "0.1.0"
+version = "0.2.0-alpha.1"
 edition = "2021"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 repository = "https://github.com/conradludgate/rusty-paserk"
 description = "Platform Agnostic Serializable Keys (PASERK) is an extension on PASETO for key management"
 license = "MIT"
-keywords = ["paseto", "paserk", "token", "security", "api", "web"]
+keywords = ["paseto", "paserk", "token", "security"]
 categories = [
   "cryptography",
   "authentication",

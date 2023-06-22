@@ -165,9 +165,15 @@ pub use rusty_paseto::core::V4;
 
 pub use id::KeyId;
 pub use key::{Key, KeyType, Local, PlaintextKey, Public, Secret, Version};
-pub use pbkw::{Argon2State, Pbkdf2State, PwVersion, PwWrapType, PwWrappedKey};
+pub use pbkw::{PwVersion, PwWrapType, PwWrappedKey};
 pub use pke::{SealedKey, SealedVersion};
 pub use wrap::{PieVersion, PieWrapType, PieWrappedKey};
+
+#[cfg(feature = "v3")]
+pub use pbkw::Pbkdf2State;
+
+#[cfg(feature = "v4")]
+pub use pbkw::Argon2State;
 
 mod id;
 mod key;

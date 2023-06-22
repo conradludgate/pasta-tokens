@@ -35,9 +35,8 @@ use crate::{key::write_b64, Key, KeyType, Local, Secret, Version};
 /// let password = "hunter2";
 ///
 /// let local_key = Key::<V4, Local>::new_random();
-/// let wrap_state = Argon2State::default();
 ///
-/// let wrapped_local = local_key.pw_wrap(password.as_bytes(), wrap_state).to_string();
+/// let wrapped_local = local_key.pw_wrap(password.as_bytes()).to_string();
 /// // => "k4.local-pw.Ibx3cOeBAsBEJsjMFXBgYgAAAAAEAAAAAAAAAgAAAAG2RRITciuBSfCWR3e324EuatP9XsKkyLcTgeZPxg6N-JhlpV2GAqvPQjRK89QnepimbYTaNitInOj45ksyyNfAEjRgjuVYUZo7vrI6unVfvtDehIc8VvgR"
 ///
 /// let wrapped_local: PwWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
@@ -52,9 +51,8 @@ use crate::{key::write_b64, Key, KeyType, Local, Secret, Version};
 /// let password = "hunter2";
 ///
 /// let secret_key = Key::<V4, Secret>::new_random();
-/// let wrap_state = Argon2State::default();
 ///
-/// let wrapped_secret = secret_key.pw_wrap(password.as_bytes(), wrap_state).to_string();
+/// let wrapped_secret = secret_key.pw_wrap(password.as_bytes()).to_string();
 /// // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
 ///
 /// let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
@@ -70,7 +68,7 @@ pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
 }
 
 impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
-    pub fn pw_wrap_with_rng(
+    pub fn pw_wrap_with_settings_and_rng(
         &self,
         password: &[u8],
         settings: V::KdfState,
@@ -120,6 +118,14 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
         }
     }
 
+    pub fn pw_wrap_with_settings(
+        &self,
+        password: &[u8],
+        settings: V::KdfState,
+    ) -> PwWrappedKey<V, K> {
+        self.pw_wrap_with_settings_and_rng(password, settings, &mut OsRng)
+    }
+
     /// Password wrapped keys
     /// <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
     ///
@@ -130,9 +136,8 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
     /// let password = "hunter2";
     ///
     /// let local_key = Key::<V4, Local>::new_random();
-    /// let wrap_state = Argon2State::default();
     ///
-    /// let wrapped_local = local_key.pw_wrap(password.as_bytes(), wrap_state).to_string();
+    /// let wrapped_local = local_key.pw_wrap(password.as_bytes()).to_string();
     /// // => "k4.local-pw.Ibx3cOeBAsBEJsjMFXBgYgAAAAAEAAAAAAAAAgAAAAG2RRITciuBSfCWR3e324EuatP9XsKkyLcTgeZPxg6N-JhlpV2GAqvPQjRK89QnepimbYTaNitInOj45ksyyNfAEjRgjuVYUZo7vrI6unVfvtDehIc8VvgR"
     ///
     /// let wrapped_local: PwWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
@@ -147,17 +152,16 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
     /// let password = "hunter2";
     ///
     /// let secret_key = Key::<V4, Secret>::new_random();
-    /// let wrap_state = Argon2State::default();
     ///
-    /// let wrapped_secret = secret_key.pw_wrap(password.as_bytes(), wrap_state).to_string();
+    /// let wrapped_secret = secret_key.pw_wrap(password.as_bytes()).to_string();
     /// // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
     ///
     /// let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
     /// let secret_key2 = wrapped_secret.unwrap(password.as_bytes()).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
-    pub fn pw_wrap(&self, password: &[u8], settings: V::KdfState) -> PwWrappedKey<V, K> {
-        self.pw_wrap_with_rng(password, settings, &mut OsRng)
+    pub fn pw_wrap(&self, password: &[u8]) -> PwWrappedKey<V, K> {
+        self.pw_wrap_with_settings(password, V::KdfState::default())
     }
 }
 
@@ -250,6 +254,8 @@ impl<V: PwVersion, K: PwWrapType<V>> fmt::Display for PwWrappedKey<V, K> {
     }
 }
 
+#[cfg(feature = "v3")]
+/// PBKDF2 parameters for V3 password wrapping
 pub struct Pbkdf2State {
     /// Defaults to 100,000 according to the PASERK PBKW specifications.
     /// Password hashing recommends 600,000 iterations, but we're not directly storing the output
@@ -257,6 +263,7 @@ pub struct Pbkdf2State {
     pub iterations: u32,
 }
 
+#[cfg(feature = "v3")]
 impl Default for Pbkdf2State {
     fn default() -> Self {
         Self {
@@ -265,7 +272,8 @@ impl Default for Pbkdf2State {
     }
 }
 
-#[derive(Debug)]
+#[cfg(feature = "v4")]
+/// Argon2 parameters for V4 password wrapping
 pub struct Argon2State {
     /// Defaults to 64 MiB
     pub mem: u32,
@@ -275,6 +283,7 @@ pub struct Argon2State {
     pub para: u32,
 }
 
+#[cfg(feature = "v4")]
 impl Default for Argon2State {
     fn default() -> Self {
         Self {
@@ -288,7 +297,7 @@ impl Default for Argon2State {
 
 /// Version info for configuring password wrapping
 pub trait PwVersion: Version {
-    type KdfState;
+    type KdfState: Default;
 
     #[doc(hidden)]
     type KdfStateLen: ArrayLength<u8>;

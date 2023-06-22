@@ -3,7 +3,7 @@ use std::{fmt, str::FromStr};
 use base64::URL_SAFE_NO_PAD;
 use base64ct::Encoding;
 use cipher::Unsigned;
-use generic_array::{sequence::Split, ArrayLength, GenericArray};
+use generic_array::{ArrayLength, GenericArray};
 use rand::{rngs::OsRng, RngCore};
 use rusty_paseto::core::PasetoError;
 #[cfg(feature = "v3")]
@@ -201,6 +201,7 @@ impl TryFrom<[u8; 64]> for Key<V4, Secret> {
 #[cfg(feature = "v4")]
 impl Key<V4, Secret> {
     pub fn public_key(&self) -> Key<V4, Public> {
+        use generic_array::sequence::Split;
         let (_sk, pk): (
             GenericArray<u8, generic_array::typenum::U32>,
             GenericArray<u8, generic_array::typenum::U32>,
