@@ -3,7 +3,6 @@
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
 
-use rand::{CryptoRng, RngCore};
 use cipher::{KeyInit, KeyIvInit, StreamCipher};
 use digest::{Digest, Mac};
 use generic_array::{
@@ -11,6 +10,7 @@ use generic_array::{
     typenum::U32,
     ArrayLength, GenericArray,
 };
+use rand::{CryptoRng, RngCore};
 
 use rand::rngs::OsRng;
 use rusty_paseto::core::PasetoError;

@@ -1,4 +1,4 @@
-use rusty_paserk::{Key, Local, PieVersion, PieWrappedKey, Secret, WrapType};
+use rusty_paserk::{Key, Local, PieVersion, PieWrapType, PieWrappedKey, Secret};
 use rusty_paseto::core::{V3, V4};
 use serde::Deserialize;
 
@@ -23,7 +23,7 @@ struct TestFile {
 fn wrap_test<V, K>(test_file: TestFile)
 where
     V: PieVersion,
-    K: WrapType<V>,
+    K: PieWrapType<V>,
 {
     for test in test_file.tests {
         let wrapping = hex::decode(test.wrapping_key).unwrap();

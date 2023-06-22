@@ -117,7 +117,7 @@ pub use rusty_paseto::core::V4;
 pub use id::KeyId;
 pub use key::{Key, KeyType, Local, PlaintextKey, Public, Secret, Version};
 pub use pke::{SealedKey, SealedVersion};
-pub use wrap::{PieVersion, PieWrappedKey, WrapType};
+pub use wrap::{PieVersion, PieWrapType, PieWrappedKey};
 
 mod id;
 mod key;
