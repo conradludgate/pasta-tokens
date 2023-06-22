@@ -12,7 +12,7 @@ use generic_array::{
     typenum::U32,
     ArrayLength, GenericArray,
 };
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::OsRng, CryptoRng, RngCore};
 use rusty_paseto::core::PasetoError;
 
 #[cfg(feature = "v3")]
@@ -99,12 +99,19 @@ impl<V: PieVersion, K: WrapType<V>> Key<V, K> {
     /// assert_eq!(secret_key, secret_key2);
     /// ```
     pub fn wrap_pie(&self, wrapping_key: &Key<V, Local>) -> PieWrappedKey<V, K> {
+        self.wrap_pie_with_rng(wrapping_key, &mut OsRng)
+    }
+    pub fn wrap_pie_with_rng(
+        &self,
+        wrapping_key: &Key<V, Local>,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> PieWrappedKey<V, K> {
         // step 1: Enforce Algorithm Lucidity
         // asserted by the caller.
 
         // step 2: Generate a 256 bit (32 bytes) random nonce, n.
         let mut n = GenericArray::<u8, U32>::default();
-        OsRng.fill_bytes(&mut n);
+        rng.fill_bytes(&mut n);
 
         // step 3: Derive the encryption key `Ek` and XChaCha nonce `n2`
         let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())

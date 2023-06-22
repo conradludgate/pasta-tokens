@@ -3,6 +3,7 @@
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
 
+use rand::{CryptoRng, RngCore};
 use cipher::{KeyInit, KeyIvInit, StreamCipher};
 use digest::{Digest, Mac};
 use generic_array::{
@@ -11,7 +12,7 @@ use generic_array::{
     ArrayLength, GenericArray,
 };
 
-use rand::{rngs::OsRng, RngCore};
+use rand::rngs::OsRng;
 use rusty_paseto::core::PasetoError;
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
@@ -224,9 +225,14 @@ pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
 }
 
 impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
-    pub fn pw_wrap(&self, password: &[u8], settings: V::KdfState) -> PwWrappedKey<V, K> {
+    pub fn pw_wrap_with_rng(
+        &self,
+        password: &[u8],
+        settings: V::KdfState,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> PwWrappedKey<V, K> {
         let mut salt = GenericArray::<u8, V::SaltLen>::default();
-        OsRng.fill_bytes(&mut salt);
+        rng.fill_bytes(&mut salt);
 
         let k = V::kdf(password, &salt, &settings);
 
@@ -242,7 +248,7 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
             .finalize();
 
         let mut n = cipher::Iv::<V::Cipher>::default();
-        OsRng.fill_bytes(&mut n);
+        rng.fill_bytes(&mut n);
 
         let mut edk = GenericArray::<u8, K::KeyLen>::default();
         <V::Cipher as KeyIvInit>::new(&ek, &n)
@@ -267,6 +273,9 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
             edk,
             tag,
         }
+    }
+    pub fn pw_wrap(&self, password: &[u8], settings: V::KdfState) -> PwWrappedKey<V, K> {
+        self.pw_wrap_with_rng(password, settings, &mut OsRng)
     }
 }
 

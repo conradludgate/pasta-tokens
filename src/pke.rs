@@ -12,7 +12,7 @@ use generic_array::{
     sequence::{Concat, Split},
     ArrayLength, GenericArray,
 };
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, CryptoRng, RngCore};
 use rusty_paseto::core::PasetoError;
 use subtle::ConstantTimeEq;
 
@@ -33,7 +33,15 @@ pub struct SealedKey<V: SealedVersion> {
 impl<V: SealedVersion> Key<V, Local> {
     /// This PASERK is a secret key intended for local PASETOs, encrypted with an asymmetric wrapping key.
     pub fn seal(&self, sealing_key: &Key<V, Public>) -> SealedKey<V> {
-        V::seal(self, sealing_key)
+        self.seal_with_rng(sealing_key, &mut OsRng)
+    }
+
+    pub fn seal_with_rng(
+        &self,
+        sealing_key: &Key<V, Public>,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> SealedKey<V> {
+        V::seal(self, sealing_key, rng)
     }
 }
 
@@ -53,7 +61,11 @@ pub trait SealedVersion: Version + Sized {
     fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self>;
     fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen>;
 
-    fn seal(plaintext_key: &Key<Self, Local>, sealing_key: &Key<Self, Public>) -> SealedKey<Self>;
+    fn seal(
+        plaintext_key: &Key<Self, Local>,
+        sealing_key: &Key<Self, Public>,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> SealedKey<Self>;
     fn unseal(
         sealed_key: SealedKey<Self>,
         unsealing_key: &Key<Self, Secret>,
@@ -83,13 +95,17 @@ impl SealedVersion for V3 {
             .concat(sealed.encrypted_data_key)
     }
 
-    fn seal(plaintext_key: &Key<V3, Local>, sealing_key: &Key<V3, Public>) -> SealedKey<V3> {
+    fn seal(
+        plaintext_key: &Key<V3, Local>,
+        sealing_key: &Key<V3, Public>,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> SealedKey<V3> {
         use p384::ecdh::EphemeralSecret;
         use p384::{EncodedPoint, PublicKey};
 
         let pk = PublicKey::from_sec1_bytes(sealing_key.as_ref()).unwrap();
 
-        let esk = EphemeralSecret::random(&mut OsRng);
+        let esk = EphemeralSecret::random(rng);
         let epk: EncodedPoint = esk.public_key().into();
         let epk = epk.compress();
         let epk = epk.as_bytes();
@@ -214,7 +230,11 @@ impl SealedVersion for V4 {
             .concat(sealed.encrypted_data_key)
     }
 
-    fn seal(plaintext_key: &Key<Self, Local>, sealing_key: &Key<Self, Public>) -> SealedKey<Self> {
+    fn seal(
+        plaintext_key: &Key<Self, Local>,
+        sealing_key: &Key<Self, Public>,
+        rng: &mut (impl RngCore + CryptoRng),
+    ) -> SealedKey<Self> {
         // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
         let pk = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(sealing_key.as_ref())
             .unwrap();
@@ -223,7 +243,7 @@ impl SealedVersion for V4 {
         // I wish the edwards point/montgomery point types were exposed by x/ed25519 libraries
         let xpk: x25519_dalek::PublicKey = pk.decompress().unwrap().to_montgomery().0.into();
 
-        let esk = x25519_dalek::EphemeralSecret::random_from_rng(OsRng);
+        let esk = x25519_dalek::EphemeralSecret::random_from_rng(rng);
         let epk = x25519_dalek::PublicKey::from(&esk);
 
         let xk = esk.diffie_hellman(&xpk);
@@ -366,5 +386,87 @@ impl<V: SealedVersion> fmt::Display for SealedKey<V> {
         f.write_str("seal.")?;
 
         write_b64(&V::join_total(self), f)
+    }
+}
+
+#[cfg(any(test, fuzzing))]
+pub mod fuzz_tests {
+    use rusty_paseto::core::V3;
+
+    use crate::{fuzzing::FakeRng, Key, Local, Secret};
+
+    #[derive(Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    pub struct V3SealInput {
+        key: Key<V3, Local>,
+        secret_key: Key<V3, Secret>,
+        ephemeral: FakeRng<48>,
+    }
+
+    impl V3SealInput {
+        pub fn run(mut self) {
+            let x: Option<p384::Scalar> =
+                p384::Scalar::from_bytes(&self.ephemeral.bytes.into()).into();
+            match x {
+                Some(s) if s.is_zero().into() => return,
+                None => return,
+                Some(_) => {}
+            }
+
+            let sealed = self
+                .key
+                .seal_with_rng(&self.secret_key.public_key(), &mut self.ephemeral);
+            let local_key2 = sealed.unseal(&self.secret_key).unwrap();
+
+            assert_eq!(self.key, local_key2);
+        }
+    }
+
+    #[test]
+    fn test1() {
+        let x = V3SealInput {
+            key: Key::from([
+                10, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 232, 231, 231, 200,
+                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
+            ]),
+            secret_key: Key::try_from([
+                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
+                28, 24, 24, 24, 24, 24, 24, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255,
+            ])
+            .unwrap(),
+            ephemeral: FakeRng {
+                bytes: [
+                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                ],
+                start: 0,
+            },
+        };
+        x.run();
+    }
+    #[test]
+    fn test2() {
+        let x = V3SealInput {
+            key: Key::from([
+                10, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 232, 231, 231, 200,
+                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
+            ]),
+            secret_key: Key::try_from([
+                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
+                28, 24, 24, 24, 24, 24, 24, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+                255, 255, 255, 255, 255, 255, 255, 255, 255,
+            ])
+            .unwrap(),
+            ephemeral: FakeRng {
+                bytes: [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ],
+                start: 0,
+            },
+        };
+        x.run();
     }
 }

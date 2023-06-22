@@ -1,0 +1,30 @@
+[package]
+name = "rusty_paserk-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
+rand = "0.8.5"
+p384 = { version = "0.13.0" }
+
+[dependencies.rusty_paserk]
+path = ".."
+features = ["arbitrary"]
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "seal"
+path = "fuzz_targets/seal.rs"
+test = false
+doc = false

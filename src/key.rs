@@ -144,6 +144,42 @@ impl<V: Version, K: KeyType<V>> From<GenericArray<u8, K::KeyLen>> for Key<V, K> 
     }
 }
 
+#[cfg(feature = "v3")]
+impl From<[u8; 32]> for Key<V3, Local> {
+    fn from(key: [u8; 32]) -> Self {
+        Self { key: key.into() }
+    }
+}
+
+#[cfg(feature = "v3")]
+impl TryFrom<[u8; 48]> for Key<V3, Secret> {
+    type Error = PasetoError;
+    fn try_from(key: [u8; 48]) -> Result<Self, Self::Error> {
+        use p384::SecretKey;
+        let key = key.into();
+        if SecretKey::from_bytes(&key).is_err() {
+            Err(PasetoError::InvalidKey)
+        } else {
+            Ok(Self { key })
+        }
+    }
+}
+
+#[cfg(feature = "v3")]
+impl Key<V3, Secret> {
+    pub fn public_key(&self) -> Key<V3, Public> {
+        use p384::{EncodedPoint, SecretKey};
+
+        let sk = SecretKey::from_bytes(&self.key).unwrap();
+        let pk: EncodedPoint = sk.public_key().into();
+        let pk = pk.compress();
+        let pk = pk.as_bytes();
+        Key {
+            key: *GenericArray::from_slice(pk),
+        }
+    }
+}
+
 impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
     fn as_ref(&self) -> &[u8] {
         &self.key
@@ -250,5 +286,28 @@ impl From<Key<V3, Secret>> for rusty_paseto::core::Key<48> {
     fn from(key: Key<V3, Secret>) -> Self {
         let key: [u8; 48] = key.key.into();
         key.into()
+    }
+}
+
+#[cfg(feature = "arbitrary")]
+mod arbitrary {
+    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V3, super::Local> {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            let key = <[u8; 32]>::arbitrary(u)?;
+            Ok(Self { key: key.into() })
+        }
+    }
+
+    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V3, super::Secret> {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            let key = <[u8; 48]>::arbitrary(u)?;
+            let key = key.into();
+
+            if p384::SecretKey::from_bytes(&key).is_err() {
+                return Err(arbitrary::Error::IncorrectFormat);
+            }
+
+            Ok(Self { key })
+        }
     }
 }

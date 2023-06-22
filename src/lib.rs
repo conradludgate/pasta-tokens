@@ -120,7 +120,64 @@ pub use pke::{SealedKey, SealedVersion};
 pub use wrap::{PieVersion, PieWrappedKey, WrapType};
 
 mod id;
-mod pbkw;
 mod key;
+mod pbkw;
 mod pke;
 mod wrap;
+
+#[cfg(any(test, fuzzing))]
+pub mod fuzzing {
+    use rand::{CryptoRng, RngCore};
+
+    #[derive(Clone, Debug)]
+    /// a consistent rng store
+    pub struct FakeRng<const N: usize> {
+        pub bytes: [u8; N],
+        pub start: usize,
+    }
+
+    #[cfg(feature = "arbitrary")]
+    impl<'a, const N: usize> arbitrary::Arbitrary<'a> for FakeRng<N>
+    where
+        [u8; N]: arbitrary::Arbitrary<'a>,
+    {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            Ok(Self {
+                bytes: <[u8; N]>::arbitrary(u)?,
+                start: 0,
+            })
+        }
+    }
+
+    impl<const N: usize> RngCore for FakeRng<N> {
+        fn next_u32(&mut self) -> u32 {
+            unimplemented!()
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            unimplemented!()
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            let remaining = N - self.start;
+            let requested = dest.len();
+            if requested > remaining {
+                panic!("not enough entropy");
+            }
+            dest.copy_from_slice(&self.bytes[self.start..self.start + requested]);
+            self.start += requested;
+        }
+
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
+
+    // not really
+    impl<const N: usize> CryptoRng for FakeRng<N> {}
+
+    pub mod seal {
+        pub use crate::pke::fuzz_tests::V3SealInput;
+    }
+}
