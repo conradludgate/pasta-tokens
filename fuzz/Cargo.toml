@@ -34,3 +34,27 @@ name = "seal_v4"
 path = "fuzz_targets/seal_v4.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "local_wrap_v4"
+path = "fuzz_targets/local_wrap_v4.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "local_wrap_v3"
+path = "fuzz_targets/local_wrap_v3.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "secret_wrap_v4"
+path = "fuzz_targets/secret_wrap_v4.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "secret_wrap_v3"
+path = "fuzz_targets/secret_wrap_v3.rs"
+test = false
+doc = false

@@ -44,10 +44,13 @@ impl Version for V4 {
 }
 
 /// Public verifying/encrypting keys
+#[derive(Debug)]
 pub struct Public;
 /// Secret signing/decrypting keys
+#[derive(Debug)]
 pub struct Secret;
 /// Local symmetric encryption/decrypting keys
+#[derive(Debug)]
 pub struct Local;
 
 /// General information about key types

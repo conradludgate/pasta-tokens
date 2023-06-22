@@ -16,7 +16,7 @@ categories = [
 ]
 
 [features]
-default = ["v3", "v4"]
+default = ["v3", "v4", "arbitrary"]
 # V3 contains NIST approved algoritms only
 v3 = [
   "hmac",
@@ -76,3 +76,8 @@ serde = { version = "1", features = ["derive"] }
 hex = "0.4"
 
 ff = "0.13.0"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+incremental = false

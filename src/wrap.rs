@@ -417,3 +417,45 @@ impl PieWrapType<V4> for Secret {
     type Output = GenericArray<u8, generic_array::typenum::U128>;
     type TagIv = <V4 as PieVersion>::TagIv;
 }
+
+#[cfg(any(test, fuzzing))]
+pub mod fuzz_tests {
+    use crate::{fuzzing::FakeRng, Key, Local};
+
+    use super::{PieVersion, PieWrapType};
+
+    #[derive(Debug)]
+    pub struct FuzzInput<V: PieVersion, K: PieWrapType<V>> {
+        wrapping_key: Key<V, Local>,
+        key: Key<V, K>,
+        ephemeral: FakeRng<32>,
+    }
+
+    #[cfg(feature = "arbitrary")]
+    impl<'a, V: PieVersion, K: PieWrapType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
+    where
+        Key<V, Local>: arbitrary::Arbitrary<'a>,
+        Key<V, K>: arbitrary::Arbitrary<'a>,
+    {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            Ok(Self {
+                wrapping_key: u.arbitrary()?,
+                key: u.arbitrary()?,
+                ephemeral: u.arbitrary()?,
+            })
+        }
+    }
+
+    impl<V: PieVersion, K: PieWrapType<V>> FuzzInput<V, K> {
+        pub fn run(mut self) {
+            let mut wrapped = self
+                .key
+                .wrap_pie_with_rng(&self.wrapping_key, &mut self.ephemeral);
+            let s = wrapped.to_string();
+            wrapped = s.parse().unwrap();
+            let key = wrapped.unwrap_key(&self.wrapping_key).unwrap();
+
+            assert_eq!(self.key, key);
+        }
+    }
+}

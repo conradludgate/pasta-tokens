@@ -256,4 +256,7 @@ pub mod fuzzing {
     pub mod seal {
         pub use crate::pke::fuzz_tests::{V3SealInput, V4SealInput};
     }
+    pub mod wrap {
+        pub use crate::wrap::fuzz_tests::FuzzInput;
+    }
 }
