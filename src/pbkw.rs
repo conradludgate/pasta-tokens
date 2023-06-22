@@ -3,13 +3,13 @@
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
 
-use std::{fmt, str::FromStr};
+use std::{fmt, ops::DerefMut, str::FromStr};
 
 use base64::URL_SAFE_NO_PAD;
-use cipher::{KeyInit, KeyIvInit, StreamCipher, Unsigned};
-use digest::{Digest, Mac};
+use cipher::{IvSizeUser, KeyInit, KeyIvInit, StreamCipher, Unsigned};
+use digest::{Digest, Mac, OutputSizeUser};
 use generic_array::{
-    sequence::{Concat, Split},
+    sequence::{Concat, GenericSequence, Split},
     typenum::U32,
     ArrayLength, GenericArray,
 };
@@ -62,7 +62,7 @@ use crate::{key::write_b64, Key, KeyType, Local, Secret, Version};
 /// assert_eq!(secret_key, secret_key2);
 /// ```
 pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
-    salt: GenericArray<u8, V::SaltLen>,
+    salt: V::Salt,
     state: V::KdfState,
     nonce: cipher::Iv<V::Cipher>,
     edk: GenericArray<u8, K::KeyLen>,
@@ -76,7 +76,7 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
         settings: V::KdfState,
         rng: &mut (impl RngCore + CryptoRng),
     ) -> PwWrappedKey<V, K> {
-        let mut salt = GenericArray::<u8, V::SaltLen>::default();
+        let mut salt = V::Salt::default();
         rng.fill_bytes(&mut salt);
 
         let k = V::kdf(password, &salt, &settings);
@@ -104,7 +104,7 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
             .unwrap()
             .chain_update(V::KEY_HEADER)
             .chain_update(K::WRAP_HEADER)
-            .chain_update(&salt)
+            .chain_update(&*salt)
             .chain_update(V::encode_state(&settings))
             .chain_update(&n)
             .chain_update(&edk)
@@ -174,7 +174,7 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
             .unwrap()
             .chain_update(V::KEY_HEADER)
             .chain_update(K::WRAP_HEADER)
-            .chain_update(&self.salt)
+            .chain_update(&*self.salt)
             .chain_update(V::encode_state(&self.state))
             .chain_update(&self.nonce)
             .chain_update(&self.edk)
@@ -209,15 +209,19 @@ impl<V: PwVersion, K: PwWrapType<V>> FromStr for PwWrappedKey<V, K> {
             .strip_prefix(K::WRAP_HEADER)
             .ok_or(PasetoError::WrongHeader)?;
 
-        let mut total = GenericArray::<u8, K::TotalLen>::default();
+        let mut total = K::SaltStateIvEdkTag::default();
         let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut total)?;
-        if len != <K::TotalLen as Unsigned>::USIZE {
+        if len != <<K::SaltStateIvEdkTag as GenericSequence<u8>>::Length as Unsigned>::USIZE {
             return Err(PasetoError::PayloadBase64Decode {
                 source: base64::DecodeError::InvalidLength,
             });
         }
 
-        let (salt, state, nonce, edk, tag) = K::split_total(total);
+        let (salt_state_nonce_edk, tag) = total.split();
+        let (salt_state_nonce, edk) = salt_state_nonce_edk.split();
+        let (salt_state, nonce) = salt_state_nonce.split();
+        let (salt, state) = salt_state.split();
+        let state = V::decode_state(state);
 
         Ok(Self {
             salt,
@@ -234,32 +238,16 @@ impl<V: PwVersion, K: PwWrapType<V>> fmt::Display for PwWrappedKey<V, K> {
         f.write_str(V::KEY_HEADER)?;
         f.write_str(K::WRAP_HEADER)?;
 
-        let output = K::into_total(&self.salt, &self.state, &self.nonce, &self.edk, &self.tag);
+        let output: K::SaltStateIv = self
+            .salt
+            .concat(V::encode_state(&self.state))
+            .concat(self.nonce.clone())
+            .into();
+
+        let output = output.concat(self.edk.clone()).concat(self.tag.clone());
 
         write_b64(&output, f)
     }
-}
-
-/// Version info for configuring password wrapping
-pub trait PwVersion: Version {
-    type SaltLen: ArrayLength<u8>;
-
-    type KdfStateLen: ArrayLength<u8>;
-    type KdfState;
-
-    type Cipher: StreamCipher + KeyIvInit;
-
-    type KeyHash: Digest;
-    type TagMac: Mac + KeyInit;
-
-    fn kdf(
-        pw: &[u8],
-        salt: &GenericArray<u8, Self::SaltLen>,
-        state: &Self::KdfState,
-    ) -> GenericArray<u8, U32>;
-
-    fn split_ek(ek: digest::Output<Self::KeyHash>) -> cipher::Key<Self::Cipher>;
-    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen>;
 }
 
 pub struct Pbkdf2State {
@@ -274,35 +262,6 @@ impl Default for Pbkdf2State {
         Self {
             iterations: 100_000,
         }
-    }
-}
-
-#[cfg(feature = "v3")]
-impl PwVersion for V3 {
-    type Cipher = ctr::Ctr64BE<aes::Aes256>;
-    type KeyHash = sha2::Sha384;
-    type TagMac = hmac::Hmac<sha2::Sha384>;
-
-    type SaltLen = generic_array::typenum::U32;
-
-    type KdfStateLen = generic_array::typenum::U4;
-    type KdfState = Pbkdf2State;
-
-    fn kdf(
-        pw: &[u8],
-        salt: &GenericArray<u8, Self::SaltLen>,
-        state: &Self::KdfState,
-    ) -> GenericArray<u8, U32> {
-        pbkdf2::pbkdf2_hmac_array::<sha2::Sha384, 32>(pw, salt.as_slice(), state.iterations).into()
-    }
-
-    fn split_ek(ek: digest::Output<Self::KeyHash>) -> cipher::Key<Self::Cipher> {
-        let (ek, _) = ek.split();
-        ek
-    }
-
-    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen> {
-        s.iterations.to_be_bytes().into()
     }
 }
 
@@ -327,22 +286,155 @@ impl Default for Argon2State {
     }
 }
 
+/// Version info for configuring password wrapping
+pub trait PwVersion: Version {
+    type KdfState;
+
+    #[doc(hidden)]
+    type KdfStateLen: ArrayLength<u8>;
+    #[doc(hidden)]
+    type Cipher: StreamCipher + KeyIvInit;
+    #[doc(hidden)]
+    type KeyHash: Digest;
+    #[doc(hidden)]
+    type TagMac: Mac + KeyInit;
+
+    #[doc(hidden)]
+    type Salt: Concat<
+            u8,
+            Self::KdfStateLen,
+            Rest = GenericArray<u8, Self::KdfStateLen>,
+            Output = Self::SaltState,
+        > + DerefMut<Target = [u8]>
+        + Copy
+        + Default;
+
+    #[doc(hidden)]
+    type SaltState: Split<
+            u8,
+            <Self::Salt as GenericSequence<u8>>::Length,
+            First = Self::Salt,
+            Second = GenericArray<u8, Self::KdfStateLen>,
+        > + Concat<
+            u8,
+            <Self::Cipher as IvSizeUser>::IvSize,
+            Rest = cipher::Iv<Self::Cipher>,
+            Output = Self::SaltStateIv,
+        >;
+
+    #[doc(hidden)]
+    type SaltStateIv: Split<
+        u8,
+        <Self::SaltState as GenericSequence<u8>>::Length,
+        First = Self::SaltState,
+        Second = cipher::Iv<Self::Cipher>,
+    >;
+
+    #[doc(hidden)]
+    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> GenericArray<u8, U32>;
+
+    #[doc(hidden)]
+    fn split_ek(ek: digest::Output<Self::KeyHash>) -> cipher::Key<Self::Cipher>;
+
+    #[doc(hidden)]
+    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen>;
+
+    #[doc(hidden)]
+    fn decode_state(s: GenericArray<u8, Self::KdfStateLen>) -> Self::KdfState;
+}
+
+/// Key wrapping type. Can be either `local-pw.` or `secret-pw.`
+pub trait WrapType {
+    const WRAP_HEADER: &'static str;
+}
+
+impl WrapType for Local {
+    const WRAP_HEADER: &'static str = "local-pw.";
+}
+
+impl WrapType for Secret {
+    const WRAP_HEADER: &'static str = "secret-pw.";
+}
+
+/// Helper trait for configuring the key wrapping
+pub trait PwWrapType<V: PwVersion>: KeyType<V> + WrapType {
+    #[doc(hidden)]
+    type SaltStateIv: From<V::SaltStateIv>
+        + Concat<
+            u8,
+            Self::KeyLen,
+            Rest = GenericArray<u8, Self::KeyLen>,
+            Output = Self::SaltStateIvEdk,
+        >;
+
+    #[doc(hidden)]
+    type SaltStateIvEdk: Split<
+            u8,
+            <V::SaltStateIv as GenericSequence<u8>>::Length,
+            First = V::SaltStateIv,
+            Second = GenericArray<u8, Self::KeyLen>,
+        > + Concat<
+            u8,
+            <V::TagMac as OutputSizeUser>::OutputSize,
+            Rest = GenericArray<u8, <V::TagMac as OutputSizeUser>::OutputSize>,
+            Output = Self::SaltStateIvEdkTag,
+        >;
+
+    #[doc(hidden)]
+    type SaltStateIvEdkTag: Split<
+            u8,
+            <Self::SaltStateIvEdk as GenericSequence<u8>>::Length,
+            First = Self::SaltStateIvEdk,
+            Second = GenericArray<u8, <V::TagMac as OutputSizeUser>::OutputSize>,
+        > + DerefMut<Target = [u8]>
+        + Default;
+}
+
+#[cfg(feature = "v3")]
+impl PwVersion for V3 {
+    type Cipher = ctr::Ctr64BE<aes::Aes256>;
+    type KeyHash = sha2::Sha384;
+    type TagMac = hmac::Hmac<sha2::Sha384>;
+
+    type KdfStateLen = generic_array::typenum::U4;
+    type KdfState = Pbkdf2State;
+
+    type Salt = GenericArray<u8, generic_array::typenum::U32>;
+    type SaltState = GenericArray<u8, generic_array::typenum::U36>;
+    type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
+
+    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> GenericArray<u8, U32> {
+        pbkdf2::pbkdf2_hmac_array::<sha2::Sha384, 32>(pw, salt.as_slice(), state.iterations).into()
+    }
+
+    fn split_ek(ek: digest::Output<Self::KeyHash>) -> cipher::Key<Self::Cipher> {
+        let (ek, _) = ek.split();
+        ek
+    }
+
+    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen> {
+        s.iterations.to_be_bytes().into()
+    }
+    fn decode_state(s: GenericArray<u8, Self::KdfStateLen>) -> Self::KdfState {
+        let i = u32::from_be_bytes(s.into());
+        Pbkdf2State { iterations: i }
+    }
+}
+
 #[cfg(feature = "v4")]
 impl PwVersion for V4 {
     type Cipher = chacha20::XChaCha20;
     type KeyHash = blake2::Blake2b<U32>;
     type TagMac = blake2::Blake2bMac<U32>;
 
-    type SaltLen = generic_array::typenum::U16;
-
     type KdfStateLen = generic_array::typenum::U16;
     type KdfState = Argon2State;
 
-    fn kdf(
-        pw: &[u8],
-        salt: &GenericArray<u8, Self::SaltLen>,
-        state: &Self::KdfState,
-    ) -> GenericArray<u8, U32> {
+    type Salt = GenericArray<u8, generic_array::typenum::U16>;
+    type SaltState = GenericArray<u8, generic_array::typenum::U32>;
+    type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
+
+    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> GenericArray<u8, U32> {
         let mut out = GenericArray::<u8, U32>::default();
         argon2::Argon2::new(
             argon2::Algorithm::Argon2id,
@@ -364,206 +456,44 @@ impl PwVersion for V4 {
             .concat(s.time.to_be_bytes().into())
             .concat(s.para.to_be_bytes().into())
     }
-}
+    fn decode_state(s: GenericArray<u8, Self::KdfStateLen>) -> Self::KdfState {
+        let (mem1, b) = s.split();
+        let (mem2, b) = b.split();
+        let (time, para) = b.split();
 
-/// Key wrap information (`local`/`secret`)
-pub trait PwWrapType<V: PwVersion>: KeyType<V> {
-    const WRAP_HEADER: &'static str;
+        let _mem1: GenericArray<u8, generic_array::typenum::U4> = mem1;
+        let mem = u32::from_be_bytes(mem2.into());
+        let time = u32::from_be_bytes(time.into());
+        let para = u32::from_be_bytes(para.into());
 
-    type TotalLen: ArrayLength<u8>;
-    #[allow(clippy::type_complexity)]
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        GenericArray<u8, V::SaltLen>,
-        V::KdfState,
-        cipher::Iv<V::Cipher>,
-        GenericArray<u8, Self::KeyLen>,
-        digest::Output<V::TagMac>,
-    );
-    fn into_total(
-        salt: &GenericArray<u8, V::SaltLen>,
-        state: &V::KdfState,
-        nonce: &cipher::Iv<V::Cipher>,
-        edk: &GenericArray<u8, Self::KeyLen>,
-        tag: &digest::Output<V::TagMac>,
-    ) -> GenericArray<u8, Self::TotalLen>;
-}
-
-#[cfg(feature = "v3")]
-impl PwWrapType<V3> for Local {
-    const WRAP_HEADER: &'static str = "local-pw.";
-
-    type TotalLen = generic_array::typenum::U132;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        GenericArray<u8, <V3 as PwVersion>::SaltLen>,
-        <V3 as PwVersion>::KdfState,
-        cipher::Iv<<V3 as PwVersion>::Cipher>,
-        GenericArray<u8, Self::KeyLen>,
-        digest::Output<<V3 as PwVersion>::TagMac>,
-    ) {
-        let (s, b) = total.split();
-        let (i, b) = b.split();
-        let (n, b) = b.split();
-        let (edk, t) = b.split();
-
-        let i = u32::from_be_bytes(i.into());
-
-        (s, Pbkdf2State { iterations: i }, n, edk, t)
-    }
-    fn into_total(
-        salt: &GenericArray<u8, <V3 as PwVersion>::SaltLen>,
-        state: &<V3 as PwVersion>::KdfState,
-        nonce: &cipher::Iv<<V3 as PwVersion>::Cipher>,
-        edk: &GenericArray<u8, Self::KeyLen>,
-        tag: &digest::Output<<V3 as PwVersion>::TagMac>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        let i = state.iterations.to_be_bytes();
-        salt.concat(i.into())
-            .concat(*nonce)
-            .concat(*edk)
-            .concat(*tag)
-    }
-}
-
-#[cfg(feature = "v3")]
-impl PwWrapType<V3> for Secret {
-    const WRAP_HEADER: &'static str = "secret-pw.";
-
-    type TotalLen = generic_array::typenum::U148;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        GenericArray<u8, <V3 as PwVersion>::SaltLen>,
-        <V3 as PwVersion>::KdfState,
-        cipher::Iv<<V3 as PwVersion>::Cipher>,
-        GenericArray<u8, Self::KeyLen>,
-        digest::Output<<V3 as PwVersion>::TagMac>,
-    ) {
-        let (s, b) = total.split();
-        let (i, b) = b.split();
-        let (n, b) = b.split();
-        let (edk, t) = b.split();
-
-        let i = u32::from_be_bytes(i.into());
-
-        (s, Pbkdf2State { iterations: i }, n, edk, t)
-    }
-    fn into_total(
-        salt: &GenericArray<u8, <V3 as PwVersion>::SaltLen>,
-        state: &<V3 as PwVersion>::KdfState,
-        nonce: &cipher::Iv<<V3 as PwVersion>::Cipher>,
-        edk: &GenericArray<u8, Self::KeyLen>,
-        tag: &digest::Output<<V3 as PwVersion>::TagMac>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        let i = state.iterations.to_be_bytes();
-        salt.concat(i.into())
-            .concat(*nonce)
-            .concat(*edk)
-            .concat(*tag)
+        Argon2State { mem, time, para }
     }
 }
 
 #[cfg(feature = "v4")]
 impl PwWrapType<V4> for Local {
-    const WRAP_HEADER: &'static str = "local-pw.";
+    type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
+    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U88>;
+    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U120>;
+}
 
-    type TotalLen = generic_array::typenum::U120;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        GenericArray<u8, <V4 as PwVersion>::SaltLen>,
-        <V4 as PwVersion>::KdfState,
-        cipher::Iv<<V4 as PwVersion>::Cipher>,
-        GenericArray<u8, Self::KeyLen>,
-        digest::Output<<V4 as PwVersion>::TagMac>,
-    ) {
-        let (s, b) = total.split();
-        let (state, b) = b.split();
-        let (n, b) = b.split();
-        let (edk, t) = b.split();
-
-        let state: GenericArray<u8, generic_array::typenum::U16> = state;
-        let (mem1, b) = state.split();
-        let (mem2, b) = b.split();
-        let (time, para) = b.split();
-
-        let _mem1: GenericArray<u8, generic_array::typenum::U4> = mem1;
-        let mem = u32::from_be_bytes(mem2.into());
-        let time = u32::from_be_bytes(time.into());
-        let para = u32::from_be_bytes(para.into());
-
-        (s, Argon2State { mem, time, para }, n, edk, t)
-    }
-    fn into_total(
-        salt: &GenericArray<u8, <V4 as PwVersion>::SaltLen>,
-        state: &<V4 as PwVersion>::KdfState,
-        nonce: &cipher::Iv<<V4 as PwVersion>::Cipher>,
-        edk: &GenericArray<u8, Self::KeyLen>,
-        tag: &digest::Output<<V4 as PwVersion>::TagMac>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        let mem = state.mem.to_be_bytes();
-        let time = state.time.to_be_bytes();
-        let para = state.para.to_be_bytes();
-        salt.concat([0, 0, 0, 0].into())
-            .concat(mem.into())
-            .concat(time.into())
-            .concat(para.into())
-            .concat(*nonce)
-            .concat(*edk)
-            .concat(*tag)
-    }
+#[cfg(feature = "v3")]
+impl PwWrapType<V3> for Local {
+    type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
+    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U84>;
+    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U132>;
 }
 
 #[cfg(feature = "v4")]
 impl PwWrapType<V4> for Secret {
-    const WRAP_HEADER: &'static str = "secret-pw.";
+    type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
+    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U120>;
+    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U152>;
+}
 
-    type TotalLen = generic_array::typenum::U152;
-    fn split_total(
-        total: GenericArray<u8, Self::TotalLen>,
-    ) -> (
-        GenericArray<u8, <V4 as PwVersion>::SaltLen>,
-        <V4 as PwVersion>::KdfState,
-        cipher::Iv<<V4 as PwVersion>::Cipher>,
-        GenericArray<u8, Self::KeyLen>,
-        digest::Output<<V4 as PwVersion>::TagMac>,
-    ) {
-        let (s, b) = total.split();
-        let (state, b) = b.split();
-        let (n, b) = b.split();
-        let (edk, t) = b.split();
-
-        let state: GenericArray<u8, generic_array::typenum::U16> = state;
-        let (mem1, b) = state.split();
-        let (mem2, b) = b.split();
-        let (time, para) = b.split();
-
-        let _mem1: GenericArray<u8, generic_array::typenum::U4> = mem1;
-        let mem = u32::from_be_bytes(mem2.into());
-        let time = u32::from_be_bytes(time.into());
-        let para = u32::from_be_bytes(para.into());
-
-        (s, Argon2State { mem, time, para }, n, edk, t)
-    }
-    fn into_total(
-        salt: &GenericArray<u8, <V4 as PwVersion>::SaltLen>,
-        state: &<V4 as PwVersion>::KdfState,
-        nonce: &cipher::Iv<<V4 as PwVersion>::Cipher>,
-        edk: &GenericArray<u8, Self::KeyLen>,
-        tag: &digest::Output<<V4 as PwVersion>::TagMac>,
-    ) -> GenericArray<u8, Self::TotalLen> {
-        let mem = state.mem.to_be_bytes();
-        let time = state.time.to_be_bytes();
-        let para = state.para.to_be_bytes();
-        salt.concat([0, 0, 0, 0].into())
-            .concat(mem.into())
-            .concat(time.into())
-            .concat(para.into())
-            .concat(*nonce)
-            .concat(*edk)
-            .concat(*tag)
-    }
+#[cfg(feature = "v3")]
+impl PwWrapType<V3> for Secret {
+    type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
+    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U100>;
+    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U148>;
 }
