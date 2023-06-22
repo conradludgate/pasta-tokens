@@ -9,7 +9,7 @@ use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
 
-use crate::key::{write_b64, Key, KeyType, Version};
+use crate::{write_b64, Key, KeyType, Version};
 
 /// Unique ID for a key
 ///
@@ -19,7 +19,7 @@ use crate::key::{write_b64, Key, KeyType, Version};
 /// ```
 /// use rusty_paserk::{KeyId, Key, Local, V4};
 ///
-/// let local_key = Key::<V4, Local>::new_random();
+/// let local_key = Key::<V4, Local>::new_os_random();
 /// let kid: KeyId<V4, Local> = local_key.into();
 /// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
 /// ```
@@ -28,7 +28,7 @@ use crate::key::{write_b64, Key, KeyType, Version};
 /// ```
 /// use rusty_paserk::{KeyId, Key, Secret, Public, V4};
 ///
-/// let secret_key = Key::<V4, Secret>::new_random();
+/// let secret_key = Key::<V4, Secret>::new_os_random();
 /// let kid: KeyId<V4, Secret> = secret_key.into();
 /// // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
 ///
@@ -99,6 +99,26 @@ impl<V: Version, K: KeyType<V>> Clone for KeyId<V, K> {
     }
 }
 impl<V: Version, K: KeyType<V>> Copy for KeyId<V, K> {}
+
+impl<V: Version, K: KeyType<V>> Key<V, K>
+where
+    KeyId<V, K>: From<Self>,
+{
+    /// Unique ID for a key
+    ///
+    /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
+    ///
+    /// ```
+    /// use rusty_paserk::{KeyId, Key, Local, V4};
+    ///
+    /// let local_key = Key::<V4, Local>::new_os_random();
+    /// let kid = local_key.to_id();
+    /// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
+    /// ```
+    pub fn to_id(&self) -> KeyId<V, K> {
+        self.clone().into()
+    }
+}
 
 #[cfg(feature = "v3")]
 impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {

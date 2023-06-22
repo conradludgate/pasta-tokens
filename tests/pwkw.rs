@@ -1,4 +1,7 @@
-use rusty_paserk::{Local, PwVersion, PwWrapType, PwWrappedKey, Secret};
+use rusty_paserk::{
+    internal::{PwVersion, PwWrapType},
+    Local, PwWrappedKey, Secret,
+};
 use rusty_paseto::core::{V3, V4};
 use serde::Deserialize;
 
@@ -31,7 +34,7 @@ where
                 continue;
             };
 
-            match wrapped_key.unwrap(test.password.as_bytes()) {
+            match wrapped_key.unwrap_key(test.password.as_bytes()) {
                 Err(_) => {}
                 Ok(_) => {
                     panic!(
@@ -49,7 +52,7 @@ where
                 panic!("{} > {}: unwrap parse failed", test_file.name, test.name)
             };
 
-            match wrapped_key.unwrap(test.password.as_bytes()) {
+            match wrapped_key.unwrap_key(test.password.as_bytes()) {
                 Err(err) => panic!("{} > {}: {:?}", test_file.name, test.name, err),
                 Ok(key) => {
                     assert_eq!(

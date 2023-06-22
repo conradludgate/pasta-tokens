@@ -1,6 +1,7 @@
 //! PASERK uses symmetric-key encryption to wrap PASETO keys.
 //!
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap.md>
+//! <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
 
 use std::{fmt, ops::DerefMut, str::FromStr};
 
@@ -21,24 +22,23 @@ use rusty_paseto::core::V3;
 use rusty_paseto::core::V4;
 use subtle::ConstantTimeEq;
 
-use crate::key::{write_b64, Key, KeyType, Local, Secret, Version};
+use crate::{write_b64, Key, KeyType, Local, Secret, Version};
 
 /// Paragon Initiative Enterprises standard key-wrapping
-/// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
 ///
 /// # Local Wrapping
 /// ```
 /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
 ///
-/// let wrapping_key = Key::<V4, Local>::new_random();
+/// let wrapping_key = Key::<V4, Local>::new_os_random();
 ///
-/// let local_key = Key::<V4, Local>::new_random();
+/// let local_key = Key::<V4, Local>::new_os_random();
 ///
 /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
 /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
 ///
 /// let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
-/// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+/// let local_key2 = wrapped_local.unwrap_key(&wrapping_key).unwrap();
 /// assert_eq!(local_key, local_key2);
 /// ```
 ///
@@ -46,15 +46,15 @@ use crate::key::{write_b64, Key, KeyType, Local, Secret, Version};
 /// ```
 /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
 ///
-/// let wrapping_key = Key::<V4, Local>::new_random();
+/// let wrapping_key = Key::<V4, Local>::new_os_random();
 ///
-/// let secret_key = Key::<V4, Secret>::new_random();
+/// let secret_key = Key::<V4, Secret>::new_os_random();
 ///
 /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
 /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
 ///
 /// let wrapped_secret: PieWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
-/// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
+/// let secret_key2 = wrapped_secret.unwrap_key(&wrapping_key).unwrap();
 /// assert_eq!(secret_key, secret_key2);
 /// ```
 pub struct PieWrappedKey<V: PieVersion, K: KeyType<V>> {
@@ -72,21 +72,20 @@ where
 
 impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     /// Paragon Initiative Enterprises standard key-wrapping
-    /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
     ///
     /// # Local Wrapping
     /// ```
     /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
     ///
-    /// let wrapping_key = Key::<V4, Local>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
-    /// let local_key = Key::<V4, Local>::new_random();
+    /// let local_key = Key::<V4, Local>::new_os_random();
     ///
     /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
     ///
     /// let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
-    /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+    /// let local_key2 = wrapped_local.unwrap_key(&wrapping_key).unwrap();
     /// assert_eq!(local_key, local_key2);
     /// ```
     ///
@@ -94,15 +93,15 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     /// ```
     /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
     ///
-    /// let wrapping_key = Key::<V4, Local>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
-    /// let secret_key = Key::<V4, Secret>::new_random();
+    /// let secret_key = Key::<V4, Secret>::new_os_random();
     ///
     /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
     ///
     /// let wrapped_secret: PieWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
-    /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
+    /// let secret_key2 = wrapped_secret.unwrap_key(&wrapping_key).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
     pub fn wrap_pie(&self, wrapping_key: &Key<V, Local>) -> PieWrappedKey<V, K> {
@@ -168,21 +167,20 @@ where
     V: PieVersion,
 {
     /// Paragon Initiative Enterprises standard key-wrapping
-    /// <https://github.com/paseto-standard/paserk/blob/master/operations/Wrap/pie.md>
     ///
     /// # Local Wrapping
     /// ```
     /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
     ///
-    /// let wrapping_key = Key::<V4, Local>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
-    /// let local_key = Key::<V4, Local>::new_random();
+    /// let local_key = Key::<V4, Local>::new_os_random();
     ///
     /// let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
     ///
     /// let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
-    /// let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+    /// let local_key2 = wrapped_local.unwrap_key(&wrapping_key).unwrap();
     /// assert_eq!(local_key, local_key2);
     /// ```
     ///
@@ -190,18 +188,18 @@ where
     /// ```
     /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
     ///
-    /// let wrapping_key = Key::<V4, Local>::new_random();
+    /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
-    /// let secret_key = Key::<V4, Secret>::new_random();
+    /// let secret_key = Key::<V4, Secret>::new_os_random();
     ///
     /// let wrapped_secret = secret_key.wrap_pie(&wrapping_key).to_string();
     /// // => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
     ///
     /// let wrapped_secret: PieWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
-    /// let secret_key2 = wrapped_secret.unwrap(&wrapping_key).unwrap();
+    /// let secret_key2 = wrapped_secret.unwrap_key(&wrapping_key).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
-    pub fn unwrap(self, wrapping_key: &Key<V, Local>) -> Result<Key<V, K>, PasetoError> {
+    pub fn unwrap_key(self, wrapping_key: &Key<V, Local>) -> Result<Key<V, K>, PasetoError> {
         let Self {
             mut wrapped_key,
             nonce,
@@ -250,7 +248,7 @@ where
         // asserted by type signature
 
         // step 8: return ptk
-        Ok(wrapped_key.into())
+        Ok(Key { key: wrapped_key })
     }
 }
 

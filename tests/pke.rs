@@ -1,4 +1,4 @@
-use rusty_paserk::{Key, Local, SealedKey, SealedVersion, Secret};
+use rusty_paserk::{internal::SealedVersion, Key, Local, SealedKey, Secret};
 use rusty_paseto::core::{PasetoError, V4};
 use serde::Deserialize;
 

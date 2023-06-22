@@ -1,11 +1,7 @@
-use std::{fmt, str::FromStr};
+use std::fmt;
 
-use base64::URL_SAFE_NO_PAD;
-use base64ct::Encoding;
-use cipher::Unsigned;
 use generic_array::{ArrayLength, GenericArray};
-use rand::{rngs::OsRng, RngCore};
-use rusty_paseto::core::PasetoError;
+
 #[cfg(feature = "v3")]
 use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
@@ -58,7 +54,9 @@ pub struct Local;
 pub trait KeyType<V: Version> {
     /// Chooses the correct length from the version
     type KeyLen: ArrayLength<u8>;
+    /// Header for this key type
     const HEADER: &'static str;
+    /// ID header for this key type
     const ID: &'static str;
 }
 
@@ -98,6 +96,7 @@ impl<V: Version, K: KeyType<V>> Clone for Key<V, K> {
         }
     }
 }
+
 #[cfg(feature = "v3")]
 impl Copy for Key<V3, Local> {}
 #[cfg(feature = "v4")]
@@ -122,253 +121,9 @@ impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
     }
 }
 
-#[cfg(feature = "v3")]
-impl Key<V3, Secret> {
-    pub fn from_sec1_pem(s: &str) -> Result<Self, PasetoError> {
-        let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::Cryption)?;
-        Ok(Self { key: sk.to_bytes() })
-    }
-}
-
-impl<V: Version, K: KeyType<V>> TryFrom<&[u8]> for Key<V, K> {
-    type Error = PasetoError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() != <K::KeyLen as Unsigned>::USIZE {
-            return Err(PasetoError::IncorrectSize);
-        }
-        let mut key: GenericArray<u8, K::KeyLen> = Default::default();
-        key.copy_from_slice(value);
-        Ok(Key { key })
-    }
-}
-
-impl<V: Version, K: KeyType<V>> From<GenericArray<u8, K::KeyLen>> for Key<V, K> {
-    fn from(key: GenericArray<u8, K::KeyLen>) -> Self {
-        Self { key }
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<[u8; 32]> for Key<V3, Local> {
-    fn from(key: [u8; 32]) -> Self {
-        Self { key: key.into() }
-    }
-}
-
-#[cfg(feature = "v3")]
-impl TryFrom<[u8; 48]> for Key<V3, Secret> {
-    type Error = PasetoError;
-    fn try_from(key: [u8; 48]) -> Result<Self, Self::Error> {
-        use p384::SecretKey;
-        let key = key.into();
-        if SecretKey::from_bytes(&key).is_err() {
-            Err(PasetoError::InvalidKey)
-        } else {
-            Ok(Self { key })
-        }
-    }
-}
-
-#[cfg(feature = "v3")]
-impl Key<V3, Secret> {
-    pub fn public_key(&self) -> Key<V3, Public> {
-        use p384::{EncodedPoint, SecretKey};
-
-        let sk = SecretKey::from_bytes(&self.key).unwrap();
-        let pk: EncodedPoint = sk.public_key().into();
-        let pk = pk.compress();
-        let pk = pk.as_bytes();
-        Key {
-            key: *GenericArray::from_slice(pk),
-        }
-    }
-}
-
-#[cfg(feature = "v4")]
-impl TryFrom<[u8; 64]> for Key<V4, Secret> {
-    type Error = PasetoError;
-    fn try_from(key: [u8; 64]) -> Result<Self, Self::Error> {
-        use ed25519_dalek::SigningKey;
-        match SigningKey::from_keypair_bytes(&key) {
-            Ok(_) => {}
-            Err(_) => return Err(PasetoError::InvalidKey),
-        };
-        Ok(Key { key: key.into() })
-    }
-}
-
-#[cfg(feature = "v4")]
-impl Key<V4, Secret> {
-    pub fn public_key(&self) -> Key<V4, Public> {
-        use generic_array::sequence::Split;
-        let (_sk, pk): (
-            GenericArray<u8, generic_array::typenum::U32>,
-            GenericArray<u8, generic_array::typenum::U32>,
-        ) = self.key.split();
-        Key { key: pk }
-    }
-}
-
-impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
-    fn as_ref(&self) -> &[u8] {
-        &self.key
-    }
-}
-
-impl<V: Version> Key<V, Local> {
-    pub fn new_random() -> Self {
-        let mut key = GenericArray::<u8, V::Local>::default();
-        OsRng.fill_bytes(&mut key);
-        Self { key }
-    }
-}
-
-#[cfg(feature = "v4")]
-impl Key<V4, Secret> {
-    pub fn new_random() -> Self {
-        let mut key = [0; 32];
-        OsRng.fill_bytes(&mut key);
-        Self {
-            key: ed25519_dalek::SigningKey::from_bytes(&key)
-                .to_keypair_bytes()
-                .into(),
-        }
-    }
-}
-
-/// A key encoded in base64. It is not a secure serialization.
-pub struct PlaintextKey<V: Version, K: KeyType<V>>(pub Key<V, K>);
-
-impl<V: Version, K: KeyType<V>> fmt::Display for PlaintextKey<V, K> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(V::KEY_HEADER)?;
-        f.write_str(K::HEADER)?;
-        write_b64(&self.0.key, f)
-    }
-}
-
-pub(crate) fn write_b64<W: fmt::Write>(b: &[u8], w: &mut W) -> fmt::Result {
-    let mut buffer = [0; 64];
-    for chunk in b.chunks(48) {
-        let s = base64ct::Base64UrlUnpadded::encode(chunk, &mut buffer).unwrap();
-        w.write_str(s)?;
-    }
-    Ok(())
-}
-
-impl<V: Version, K: KeyType<V>> FromStr for PlaintextKey<V, K> {
-    type Err = PasetoError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s
-            .strip_prefix(V::KEY_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
-        let s = s.strip_prefix(K::HEADER).ok_or(PasetoError::WrongHeader)?;
-
-        let mut key = GenericArray::<u8, K::KeyLen>::default();
-        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut key)?;
-        if len != <K::KeyLen as Unsigned>::USIZE {
-            return Err(PasetoError::PayloadBase64Decode {
-                source: base64::DecodeError::InvalidLength,
-            });
-        }
-
-        Ok(PlaintextKey(Key { key }))
-    }
-}
-
-#[cfg(feature = "v4")]
-impl From<Key<V4, Local>>
-    for rusty_paseto::core::PasetoSymmetricKey<V4, rusty_paseto::core::Local>
-{
-    fn from(key: Key<V4, Local>) -> Self {
-        let key: [u8; 32] = key.key.into();
-        let key: rusty_paseto::core::Key<32> = key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<Key<V3, Local>>
-    for rusty_paseto::core::PasetoSymmetricKey<V3, rusty_paseto::core::Local>
-{
-    fn from(key: Key<V3, Local>) -> Self {
-        let key: [u8; 32] = key.key.into();
-        let key: rusty_paseto::core::Key<32> = key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v4")]
-impl From<Key<V4, Public>> for rusty_paseto::core::Key<32> {
-    fn from(key: Key<V4, Public>) -> Self {
-        let key: [u8; 32] = key.key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v4")]
-impl From<Key<V4, Secret>> for rusty_paseto::core::Key<64> {
-    fn from(key: Key<V4, Secret>) -> Self {
-        let key: [u8; 64] = key.key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<Key<V3, Public>> for rusty_paseto::core::Key<49> {
-    fn from(key: Key<V3, Public>) -> Self {
-        let key: [u8; 49] = key.key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<Key<V3, Secret>> for rusty_paseto::core::Key<48> {
-    fn from(key: Key<V3, Secret>) -> Self {
-        let key: [u8; 48] = key.key.into();
-        key.into()
-    }
-}
+mod convert;
 
 #[cfg(feature = "arbitrary")]
-mod arbitrary {
-    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V3, super::Local> {
-        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-            let key = <[u8; 32]>::arbitrary(u)?;
-            Ok(Self { key: key.into() })
-        }
-    }
+mod arbitrary;
 
-    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V3, super::Secret> {
-        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-            let key = <[u8; 48]>::arbitrary(u)?;
-            let key = key.into();
-
-            if p384::SecretKey::from_bytes(&key).is_err() {
-                return Err(arbitrary::Error::IncorrectFormat);
-            }
-
-            Ok(Self { key })
-        }
-    }
-
-    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V4, super::Local> {
-        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-            let key = <[u8; 32]>::arbitrary(u)?;
-            Ok(Self { key: key.into() })
-        }
-    }
-
-    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V4, super::Secret> {
-        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
-            let key = <[u8; 32]>::arbitrary(u)?;
-            Ok(Self {
-                key: ed25519_dalek::SigningKey::from_bytes(&key)
-                    .to_keypair_bytes()
-                    .into(),
-            })
-        }
-    }
-}
+pub mod plaintext;

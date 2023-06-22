@@ -71,7 +71,7 @@
 //! ```
 //! use rusty_paserk::{Key, Local, KeyId, V4};
 //!
-//! let local_key = Key::<V4, Local>::new_random();
+//! let local_key = Key::<V4, Local>::new_os_random();
 //! let kid: KeyId<V4, Local> = local_key.into();
 //! // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
 //! ```
@@ -85,7 +85,7 @@
 //! ```
 //! use rusty_paserk::{Key, Local, PlaintextKey, V4};
 //!
-//! let local_key = Key::<V4, Local>::new_random();
+//! let local_key = Key::<V4, Local>::new_os_random();
 //! let key = PlaintextKey(local_key);
 //! // key.to_string() => "k4.local.bkwMkk5uhGbHAISf4bzY5nlm6y_sfzOIAZTfj6Tc9y0"
 //! ```
@@ -99,9 +99,9 @@
 //! ```
 //! use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
 //!
-//! let key = Key::<V4, Local>::new_random();
+//! let key = Key::<V4, Local>::new_os_random();
 //!
-//! let secret_key = Key::<V4, Secret>::new_random();
+//! let secret_key = Key::<V4, Secret>::new_os_random();
 //! let public_key = secret_key.public_key();
 //!
 //! let sealed = key.seal(&public_key).to_string();
@@ -121,15 +121,15 @@
 //! ```
 //! use rusty_paserk::{PieWrappedKey, Key, Local, V4};
 //!
-//! let wrapping_key = Key::<V4, Local>::new_random();
+//! let wrapping_key = Key::<V4, Local>::new_os_random();
 //!
-//! let local_key = Key::<V4, Local>::new_random();
+//! let local_key = Key::<V4, Local>::new_os_random();
 //!
 //! let wrapped_local = local_key.wrap_pie(&wrapping_key).to_string();
 //! // => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
 //!
 //! let wrapped_local: PieWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
-//! let local_key2 = wrapped_local.unwrap(&wrapping_key).unwrap();
+//! let local_key2 = wrapped_local.unwrap_key(&wrapping_key).unwrap();
 //! assert_eq!(local_key, local_key2);
 //! ```
 //!
@@ -144,14 +144,13 @@
 //!
 //! let password = "hunter2";
 //!
-//! let secret_key = Key::<V4, Secret>::new_random();
-//! let wrap_state = Argon2State::default();
+//! let secret_key = Key::<V4, Secret>::new_os_random();
 //!
-//! let wrapped_secret = secret_key.pw_wrap(password.as_bytes(), wrap_state).to_string();
+//! let wrapped_secret = secret_key.pw_wrap(password.as_bytes()).to_string();
 //! // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
 //!
 //! let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
-//! let secret_key2 = wrapped_secret.unwrap(password.as_bytes()).unwrap();
+//! let secret_key2 = wrapped_secret.unwrap_key(password.as_bytes()).unwrap();
 //! assert_eq!(secret_key, secret_key2);
 //! ```
 //!
@@ -163,11 +162,13 @@ pub use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 pub use rusty_paseto::core::V4;
 
+pub use rusty_paseto::core::PasetoError;
+
 pub use id::KeyId;
-pub use key::{Key, KeyType, Local, PlaintextKey, Public, Secret, Version};
-pub use pbkw::{PwVersion, PwWrapType, PwWrappedKey};
-pub use pke::{SealedKey, SealedVersion};
-pub use wrap::{PieVersion, PieWrapType, PieWrappedKey};
+pub use key::{plaintext::PlaintextKey, Key, KeyType, Local, Public, Secret, Version};
+pub use pbkw::PwWrappedKey;
+pub use pke::SealedKey;
+pub use wrap::PieWrappedKey;
 
 #[cfg(feature = "v3")]
 pub use pbkw::Pbkdf2State;
@@ -180,6 +181,22 @@ mod key;
 mod pbkw;
 mod pke;
 mod wrap;
+
+pub mod internal {
+    pub use crate::pbkw::{PwType, PwVersion, PwWrapType};
+    pub use crate::pke::SealedVersion;
+    pub use crate::wrap::{PieVersion, PieWrapType, WrapType};
+}
+
+pub(crate) fn write_b64<W: std::fmt::Write>(b: &[u8], w: &mut W) -> std::fmt::Result {
+    use base64ct::Encoding;
+    let mut buffer = [0; 64];
+    for chunk in b.chunks(48) {
+        let s = base64ct::Base64UrlUnpadded::encode(chunk, &mut buffer).unwrap();
+        w.write_str(s)?;
+    }
+    Ok(())
+}
 
 /// Whether the key serialization is safe to be added to a PASETO footer.
 pub trait SafeForFooter {}

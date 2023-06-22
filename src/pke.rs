@@ -21,18 +21,17 @@ use rusty_paseto::core::V3;
 #[cfg(feature = "v4")]
 use rusty_paseto::core::V4;
 
-use crate::key::{write_b64, Key, Local, Public, Secret, Version};
+use crate::{write_b64, Key, Local, Public, Secret, Version};
 
 /// A local key encrypted with an asymmetric wrapping key.
-/// <https://github.com/paseto-standard/paserk/blob/master/operations/PKE.md>
 ///
 /// # Secret Wrapping
 /// ```
 /// use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
 ///
-/// let key = Key::<V4, Local>::new_random();
+/// let key = Key::<V4, Local>::new_os_random();
 ///
-/// let secret_key = Key::<V4, Secret>::new_random();
+/// let secret_key = Key::<V4, Secret>::new_os_random();
 /// let public_key = secret_key.public_key();
 ///
 /// let sealed = key.seal(&public_key).to_string();
@@ -52,15 +51,14 @@ impl<V> super::SafeForFooter for SealedKey<V> where V: SealedVersion {}
 
 impl<V: SealedVersion> Key<V, Local> {
     /// A local key encrypted with an asymmetric wrapping key.
-    /// <https://github.com/paseto-standard/paserk/blob/master/operations/PKE.md>
     ///
     /// # Secret Wrapping
     /// ```
     /// use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
     ///
-    /// let key = Key::<V4, Local>::new_random();
+    /// let key = Key::<V4, Local>::new_os_random();
     ///
-    /// let secret_key = Key::<V4, Secret>::new_random();
+    /// let secret_key = Key::<V4, Secret>::new_os_random();
     /// let public_key = secret_key.public_key();
     ///
     /// let sealed = key.seal(&public_key).to_string();
@@ -91,19 +89,26 @@ impl<V: SealedVersion> SealedKey<V> {
 
 /// Version info for configuring key sealing
 pub trait SealedVersion: Version + Sized {
+    #[doc(hidden)]
     type TagLen: ArrayLength<u8>;
+    #[doc(hidden)]
     type EpkLen: ArrayLength<u8>;
 
+    #[doc(hidden)]
     type TotalLen: ArrayLength<u8>;
     #[allow(clippy::type_complexity)]
+    #[doc(hidden)]
     fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self>;
+    #[doc(hidden)]
     fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen>;
 
+    #[doc(hidden)]
     fn seal(
         plaintext_key: &Key<Self, Local>,
         sealing_key: &Key<Self, Public>,
         rng: &mut (impl RngCore + CryptoRng),
     ) -> SealedKey<Self>;
+    #[doc(hidden)]
     fn unseal(
         sealed_key: SealedKey<Self>,
         unsealing_key: &Key<Self, Secret>,
@@ -242,7 +247,9 @@ impl SealedVersion for V3 {
         ctr::Ctr64BE::<aes::Aes256>::new(&ek, &n)
             .apply_keystream(&mut sealed_key.encrypted_data_key);
 
-        Ok(sealed_key.encrypted_data_key.into())
+        Ok(Key {
+            key: sealed_key.encrypted_data_key,
+        })
     }
 }
 
@@ -386,7 +393,9 @@ impl SealedVersion for V4 {
             .finalize();
 
         chacha20::XChaCha20::new(&ek, &n).apply_keystream(&mut sealed_key.encrypted_data_key);
-        Ok(sealed_key.encrypted_data_key.into())
+        Ok(Key {
+            key: sealed_key.encrypted_data_key,
+        })
     }
 }
 

@@ -1,4 +1,7 @@
-use rusty_paserk::{Key, Local, PieVersion, PieWrapType, PieWrappedKey, Secret};
+use rusty_paserk::{
+    internal::{PieVersion, PieWrapType},
+    Key, Local, PieWrappedKey, Secret,
+};
 use rusty_paseto::core::{V3, V4};
 use serde::Deserialize;
 
@@ -35,7 +38,7 @@ where
                 continue;
             };
 
-            match wrapped_key.unwrap(&wrapping_key) {
+            match wrapped_key.unwrap_key(&wrapping_key) {
                 Err(_) => {}
                 Ok(_) => {
                     panic!(
@@ -53,7 +56,7 @@ where
                 panic!("{} > {}: unwrap parse failed", test_file.name, test.name)
             };
 
-            match wrapped_key.unwrap(&wrapping_key) {
+            match wrapped_key.unwrap_key(&wrapping_key) {
                 Err(err) => panic!("{} > {}: {:?}", test_file.name, test.name, err),
                 Ok(key) => {
                     assert_eq!(

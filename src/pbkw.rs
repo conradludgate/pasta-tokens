@@ -23,10 +23,9 @@ use rusty_paseto::core::V3;
 use rusty_paseto::core::V4;
 use subtle::ConstantTimeEq;
 
-use crate::{key::write_b64, Key, KeyType, Local, Secret, Version};
+use crate::{write_b64, Key, KeyType, Local, Secret, Version};
 
 /// Password wrapped keys
-/// <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
 ///
 /// # Local password wrapping
 /// ```
@@ -34,13 +33,13 @@ use crate::{key::write_b64, Key, KeyType, Local, Secret, Version};
 ///
 /// let password = "hunter2";
 ///
-/// let local_key = Key::<V4, Local>::new_random();
+/// let local_key = Key::<V4, Local>::new_os_random();
 ///
 /// let wrapped_local = local_key.pw_wrap(password.as_bytes()).to_string();
 /// // => "k4.local-pw.Ibx3cOeBAsBEJsjMFXBgYgAAAAAEAAAAAAAAAgAAAAG2RRITciuBSfCWR3e324EuatP9XsKkyLcTgeZPxg6N-JhlpV2GAqvPQjRK89QnepimbYTaNitInOj45ksyyNfAEjRgjuVYUZo7vrI6unVfvtDehIc8VvgR"
 ///
 /// let wrapped_local: PwWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
-/// let local_key2 = wrapped_local.unwrap(password.as_bytes()).unwrap();
+/// let local_key2 = wrapped_local.unwrap_key(password.as_bytes()).unwrap();
 /// assert_eq!(local_key, local_key2);
 /// ```
 ///
@@ -50,13 +49,13 @@ use crate::{key::write_b64, Key, KeyType, Local, Secret, Version};
 ///
 /// let password = "hunter2";
 ///
-/// let secret_key = Key::<V4, Secret>::new_random();
+/// let secret_key = Key::<V4, Secret>::new_os_random();
 ///
 /// let wrapped_secret = secret_key.pw_wrap(password.as_bytes()).to_string();
 /// // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
 ///
 /// let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
-/// let secret_key2 = wrapped_secret.unwrap(password.as_bytes()).unwrap();
+/// let secret_key2 = wrapped_secret.unwrap_key(password.as_bytes()).unwrap();
 /// assert_eq!(secret_key, secret_key2);
 /// ```
 pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
@@ -68,6 +67,51 @@ pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
 }
 
 impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
+    /// Password wrapped keys
+    ///
+    /// # Local password wrapping
+    /// ```
+    /// use rusty_paserk::{PwWrappedKey, Key, Local, V4, Argon2State};
+    ///
+    /// let password = "hunter2";
+    ///
+    /// let local_key = Key::<V4, Local>::new_os_random();
+    ///
+    /// let wrapped_local = local_key.pw_wrap(password.as_bytes()).to_string();
+    /// // => "k4.local-pw.Ibx3cOeBAsBEJsjMFXBgYgAAAAAEAAAAAAAAAgAAAAG2RRITciuBSfCWR3e324EuatP9XsKkyLcTgeZPxg6N-JhlpV2GAqvPQjRK89QnepimbYTaNitInOj45ksyyNfAEjRgjuVYUZo7vrI6unVfvtDehIc8VvgR"
+    ///
+    /// let wrapped_local: PwWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
+    /// let local_key2 = wrapped_local.unwrap_key(password.as_bytes()).unwrap();
+    /// assert_eq!(local_key, local_key2);
+    /// ```
+    ///
+    /// # Secret password wrapping
+    /// ```
+    /// use rusty_paserk::{PwWrappedKey, Key, Local, Secret, V4, Argon2State};
+    ///
+    /// let password = "hunter2";
+    ///
+    /// let secret_key = Key::<V4, Secret>::new_os_random();
+    ///
+    /// let wrapped_secret = secret_key.pw_wrap(password.as_bytes()).to_string();
+    /// // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
+    ///
+    /// let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
+    /// let secret_key2 = wrapped_secret.unwrap_key(password.as_bytes()).unwrap();
+    /// assert_eq!(secret_key, secret_key2);
+    /// ```
+    pub fn pw_wrap(&self, password: &[u8]) -> PwWrappedKey<V, K> {
+        self.pw_wrap_with_settings(password, V::KdfState::default())
+    }
+
+    pub fn pw_wrap_with_settings(
+        &self,
+        password: &[u8],
+        settings: V::KdfState,
+    ) -> PwWrappedKey<V, K> {
+        self.pw_wrap_with_settings_and_rng(password, settings, &mut OsRng)
+    }
+
     pub fn pw_wrap_with_settings_and_rng(
         &self,
         password: &[u8],
@@ -117,56 +161,10 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
             tag,
         }
     }
-
-    pub fn pw_wrap_with_settings(
-        &self,
-        password: &[u8],
-        settings: V::KdfState,
-    ) -> PwWrappedKey<V, K> {
-        self.pw_wrap_with_settings_and_rng(password, settings, &mut OsRng)
-    }
-
-    /// Password wrapped keys
-    /// <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
-    ///
-    /// # Local password wrapping
-    /// ```
-    /// use rusty_paserk::{PwWrappedKey, Key, Local, V4, Argon2State};
-    ///
-    /// let password = "hunter2";
-    ///
-    /// let local_key = Key::<V4, Local>::new_random();
-    ///
-    /// let wrapped_local = local_key.pw_wrap(password.as_bytes()).to_string();
-    /// // => "k4.local-pw.Ibx3cOeBAsBEJsjMFXBgYgAAAAAEAAAAAAAAAgAAAAG2RRITciuBSfCWR3e324EuatP9XsKkyLcTgeZPxg6N-JhlpV2GAqvPQjRK89QnepimbYTaNitInOj45ksyyNfAEjRgjuVYUZo7vrI6unVfvtDehIc8VvgR"
-    ///
-    /// let wrapped_local: PwWrappedKey<V4, Local> = wrapped_local.parse().unwrap();
-    /// let local_key2 = wrapped_local.unwrap(password.as_bytes()).unwrap();
-    /// assert_eq!(local_key, local_key2);
-    /// ```
-    ///
-    /// # Secret password wrapping
-    /// ```
-    /// use rusty_paserk::{PwWrappedKey, Key, Local, Secret, V4, Argon2State};
-    ///
-    /// let password = "hunter2";
-    ///
-    /// let secret_key = Key::<V4, Secret>::new_random();
-    ///
-    /// let wrapped_secret = secret_key.pw_wrap(password.as_bytes()).to_string();
-    /// // => "k4.secret-pw.uscmLPzUoxxRfuzmY0DWcAAAAAAEAAAAAAAAAgAAAAHVNddVDnjRCc-ZmT-R-Xp7c7s4Wn1iH0dllAPFBmknEJpKGYP_aPoxVzNS_O93M0sCb68t7HjdD-jXWp-ioWe56iLoA6MlxE-SmnKear60aDwqk5fYv_EMD4Y2pV049BvDNGNN-MzR6fwW_OlyhV9omEvxmczAujM"
-    ///
-    /// let wrapped_secret: PwWrappedKey<V4, Secret> = wrapped_secret.parse().unwrap();
-    /// let secret_key2 = wrapped_secret.unwrap(password.as_bytes()).unwrap();
-    /// assert_eq!(secret_key, secret_key2);
-    /// ```
-    pub fn pw_wrap(&self, password: &[u8]) -> PwWrappedKey<V, K> {
-        self.pw_wrap_with_settings(password, V::KdfState::default())
-    }
 }
 
 impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
-    pub fn unwrap(mut self, password: &[u8]) -> Result<Key<V, K>, PasetoError> {
+    pub fn unwrap_key(mut self, password: &[u8]) -> Result<Key<V, K>, PasetoError> {
         let k = V::kdf(password, &self.salt, &self.state);
 
         let ak = <V::KeyHash as Digest>::new()
@@ -198,7 +196,7 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
 
         <V::Cipher as KeyIvInit>::new(&ek, &self.nonce).apply_keystream(&mut self.edk);
 
-        Ok(Key::from(self.edk))
+        Ok(Key { key: self.edk })
     }
 }
 
@@ -353,20 +351,21 @@ pub trait PwVersion: Version {
 }
 
 /// Key wrapping type. Can be either `local-pw.` or `secret-pw.`
-pub trait WrapType {
+pub trait PwType {
+    /// The type of password wrapped key
     const WRAP_HEADER: &'static str;
 }
 
-impl WrapType for Local {
+impl PwType for Local {
     const WRAP_HEADER: &'static str = "local-pw.";
 }
 
-impl WrapType for Secret {
+impl PwType for Secret {
     const WRAP_HEADER: &'static str = "secret-pw.";
 }
 
 /// Helper trait for configuring the key wrapping
-pub trait PwWrapType<V: PwVersion>: KeyType<V> + WrapType {
+pub trait PwWrapType<V: PwVersion>: KeyType<V> + PwType {
     #[doc(hidden)]
     type SaltStateIv: From<V::SaltStateIv>
         + Concat<
