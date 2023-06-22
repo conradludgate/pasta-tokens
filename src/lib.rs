@@ -178,6 +178,6 @@ pub mod fuzzing {
     impl<const N: usize> CryptoRng for FakeRng<N> {}
 
     pub mod seal {
-        pub use crate::pke::fuzz_tests::V3SealInput;
+        pub use crate::pke::fuzz_tests::{V3SealInput, V4SealInput};
     }
 }

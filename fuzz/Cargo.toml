@@ -24,7 +24,13 @@ members = ["."]
 debug = 1
 
 [[bin]]
-name = "seal"
-path = "fuzz_targets/seal.rs"
+name = "seal_v3"
+path = "fuzz_targets/seal_v3.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "seal_v4"
+path = "fuzz_targets/seal_v4.rs"
 test = false
 doc = false

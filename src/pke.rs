@@ -391,7 +391,7 @@ impl<V: SealedVersion> fmt::Display for SealedKey<V> {
 
 #[cfg(any(test, fuzzing))]
 pub mod fuzz_tests {
-    use rusty_paseto::core::V3;
+    use rusty_paseto::core::{V3, V4};
 
     use crate::{fuzzing::FakeRng, Key, Local, Secret};
 
@@ -422,51 +422,22 @@ pub mod fuzz_tests {
         }
     }
 
-    #[test]
-    fn test1() {
-        let x = V3SealInput {
-            key: Key::from([
-                10, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 232, 231, 231, 200,
-                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
-            ]),
-            secret_key: Key::try_from([
-                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
-                28, 24, 24, 24, 24, 24, 24, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-                255, 255, 255, 255, 255, 255, 255, 255, 255,
-            ])
-            .unwrap(),
-            ephemeral: FakeRng {
-                bytes: [
-                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-                    255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-                ],
-                start: 0,
-            },
-        };
-        x.run();
+    #[derive(Debug)]
+    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    pub struct V4SealInput {
+        key: Key<V4, Local>,
+        secret_key: Key<V4, Secret>,
+        ephemeral: FakeRng<32>,
     }
-    #[test]
-    fn test2() {
-        let x = V3SealInput {
-            key: Key::from([
-                10, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 232, 231, 231, 200,
-                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
-            ]),
-            secret_key: Key::try_from([
-                24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24,
-                28, 24, 24, 24, 24, 24, 24, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-                255, 255, 255, 255, 255, 255, 255, 255, 255,
-            ])
-            .unwrap(),
-            ephemeral: FakeRng {
-                bytes: [
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                ],
-                start: 0,
-            },
-        };
-        x.run();
+
+    impl V4SealInput {
+        pub fn run(mut self) {
+            let sealed = self
+                .key
+                .seal_with_rng(&self.secret_key.public_key(), &mut self.ephemeral);
+            let local_key2 = sealed.unseal(&self.secret_key).unwrap();
+
+            assert_eq!(self.key, local_key2);
+        }
     }
 }

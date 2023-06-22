@@ -3,7 +3,7 @@ use std::{fmt, str::FromStr};
 use base64::URL_SAFE_NO_PAD;
 use base64ct::Encoding;
 use cipher::Unsigned;
-use generic_array::{ArrayLength, GenericArray};
+use generic_array::{sequence::Split, ArrayLength, GenericArray};
 use rand::{rngs::OsRng, RngCore};
 use rusty_paseto::core::PasetoError;
 #[cfg(feature = "v3")]
@@ -113,7 +113,12 @@ impl Copy for Key<V4, Secret> {}
 
 impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Key").finish_non_exhaustive()
+        let mut f = f.debug_struct("Key");
+        if cfg!(fuzzing_repro) {
+            f.field("key", &self.key).finish()
+        } else {
+            f.finish_non_exhaustive()
+        }
     }
 }
 
@@ -177,6 +182,30 @@ impl Key<V3, Secret> {
         Key {
             key: *GenericArray::from_slice(pk),
         }
+    }
+}
+
+#[cfg(feature = "v4")]
+impl TryFrom<[u8; 64]> for Key<V4, Secret> {
+    type Error = PasetoError;
+    fn try_from(key: [u8; 64]) -> Result<Self, Self::Error> {
+        use ed25519_dalek::SigningKey;
+        match SigningKey::from_keypair_bytes(&key) {
+            Ok(_) => {}
+            Err(_) => return Err(PasetoError::InvalidKey),
+        };
+        Ok(Key { key: key.into() })
+    }
+}
+
+#[cfg(feature = "v4")]
+impl Key<V4, Secret> {
+    pub fn public_key(&self) -> Key<V4, Public> {
+        let (_sk, pk): (
+            GenericArray<u8, generic_array::typenum::U32>,
+            GenericArray<u8, generic_array::typenum::U32>,
+        ) = self.key.split();
+        Key { key: pk }
     }
 }
 
@@ -308,6 +337,24 @@ mod arbitrary {
             }
 
             Ok(Self { key })
+        }
+    }
+
+    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V4, super::Local> {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            let key = <[u8; 32]>::arbitrary(u)?;
+            Ok(Self { key: key.into() })
+        }
+    }
+
+    impl<'a> arbitrary::Arbitrary<'a> for super::Key<super::V4, super::Secret> {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            let key = <[u8; 32]>::arbitrary(u)?;
+            Ok(Self {
+                key: ed25519_dalek::SigningKey::from_bytes(&key)
+                    .to_keypair_bytes()
+                    .into(),
+            })
         }
     }
 }
