@@ -106,7 +106,9 @@
 //!
 //! ### Password wrapping `local-pw`/`secret-pw`
 //!
-//! Not currently supported
+//! Using a password, you can wrap a local or a secret key. It can be unwrapped using the same password.
+//!
+//! See the [`PwWrappedKey`] type for more info.
 
 #[cfg(feature = "v3")]
 pub use rusty_paseto::core::V3;
@@ -116,6 +118,7 @@ pub use rusty_paseto::core::V4;
 
 pub use id::KeyId;
 pub use key::{Key, KeyType, Local, PlaintextKey, Public, Secret, Version};
+pub use pbkw::{Argon2State, Pbkdf2State, PwVersion, PwWrapType, PwWrappedKey};
 pub use pke::{SealedKey, SealedVersion};
 pub use wrap::{PieVersion, PieWrapType, PieWrappedKey};
 
