@@ -179,3 +179,39 @@ where
     K: KeyType<V>,
 {
 }
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<V: Version, K: KeyType<V>> serde::Serialize for KeyId<V, K> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for KeyId<V, K> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FromStrVisitor<V, K>(std::marker::PhantomData<(V, K)>);
+        impl<'de, V: Version, K: KeyType<V>> serde::de::Visitor<'de> for FromStrVisitor<V, K> {
+            type Value = KeyId<V, K>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a \"{}{}\" serialized key", V::KEY_HEADER, K::ID)
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                v.parse().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(FromStrVisitor(std::marker::PhantomData))
+    }
+}

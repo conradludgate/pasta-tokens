@@ -68,6 +68,9 @@ pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
 impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
     /// Password wrapped keys
     ///
+    /// * Use the default KDF settings
+    /// * Use the OS RNG to determine a random salt
+    ///
     /// # Local password wrapping
     /// ```
     /// use rusty_paserk::{PwWrappedKey, Key, Local, V4, Argon2State};
@@ -103,6 +106,10 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
         self.pw_wrap_with_settings(password, V::KdfState::default())
     }
 
+    /// Password wrapped keys
+    ///
+    /// * Use the settings to configure how strong the derived key should be
+    /// * Use the OS RNG to determine a random salt
     pub fn pw_wrap_with_settings(
         &self,
         password: &[u8],
@@ -111,6 +118,10 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
         self.pw_wrap_with_settings_and_rng(password, settings, &mut OsRng)
     }
 
+    /// Password wrapped keys
+    ///
+    /// * Use the settings to configure how strong the derived key should be
+    /// * Use the RNG source to determine a random salt
     pub fn pw_wrap_with_settings_and_rng(
         &self,
         password: &[u8],
@@ -296,6 +307,7 @@ impl Default for Argon2State {
 
 /// Version info for configuring password wrapping
 pub trait PwVersion: Version {
+    /// The settings that the KDF function uses
     type KdfState: Default;
 
     #[doc(hidden)]
@@ -505,4 +517,45 @@ impl PwWrapType<V3> for Secret {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U100>;
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U148>;
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<V: PwVersion, K: PwWrapType<V>> serde::Serialize for PwWrappedKey<V, K> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<'de, V: PwVersion, K: PwWrapType<V>> serde::Deserialize<'de> for PwWrappedKey<V, K> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FromStrVisitor<V, K>(std::marker::PhantomData<(V, K)>);
+        impl<'de, V: PwVersion, K: PwWrapType<V>> serde::de::Visitor<'de> for FromStrVisitor<V, K> {
+            type Value = PwWrappedKey<V, K>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(
+                    formatter,
+                    "a \"{}{}\" serialized key",
+                    V::KEY_HEADER,
+                    K::WRAP_HEADER
+                )
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                v.parse().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(FromStrVisitor(std::marker::PhantomData))
+    }
 }

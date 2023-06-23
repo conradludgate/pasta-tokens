@@ -1,5 +1,6 @@
 use arbitrary::{Arbitrary, Result, Unstructured};
 
+#[cfg_attr(docsrs, doc(cfg(feature = "arbitrary")))]
 #[cfg(feature = "v3")]
 impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Local> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
@@ -8,6 +9,7 @@ impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Local> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "arbitrary")))]
 #[cfg(feature = "v3")]
 impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Secret> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
@@ -22,6 +24,7 @@ impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Secret> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "arbitrary")))]
 #[cfg(feature = "v4")]
 impl<'a> Arbitrary<'a> for super::Key<super::V4, super::Local> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
@@ -30,6 +33,7 @@ impl<'a> Arbitrary<'a> for super::Key<super::V4, super::Local> {
     }
 }
 
+#[cfg_attr(docsrs, doc(cfg(feature = "arbitrary")))]
 #[cfg(feature = "v4")]
 impl<'a> Arbitrary<'a> for super::Key<super::V4, super::Secret> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {

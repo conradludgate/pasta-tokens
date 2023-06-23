@@ -478,3 +478,39 @@ pub mod fuzz_tests {
         }
     }
 }
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<V: SealedVersion> serde::Serialize for SealedKey<V> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<'de, V: SealedVersion> serde::Deserialize<'de> for SealedKey<V> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FromStrVisitor<V>(std::marker::PhantomData<V>);
+        impl<'de, V: SealedVersion> serde::de::Visitor<'de> for FromStrVisitor<V> {
+            type Value = SealedKey<V>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(formatter, "a \"{}seal.\" serialized key", V::KEY_HEADER)
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                v.parse().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(FromStrVisitor(std::marker::PhantomData))
+    }
+}

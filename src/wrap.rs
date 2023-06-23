@@ -107,6 +107,9 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
         self.wrap_pie_with_rng(wrapping_key, &mut OsRng)
     }
 
+    /// Paragon Initiative Enterprises standard key-wrapping.
+    ///
+    /// Using the given RNG source for the IV
     pub fn wrap_pie_with_rng(
         &self,
         wrapping_key: &Key<V, Local>,
@@ -357,6 +360,7 @@ impl PieVersion for V4 {
 
 /// Key wrapping type. Can be either `local-wrap.` or `secret-wrap.`
 pub trait WrapType {
+    /// The header used when wrapping
     const WRAP_HEADER: &'static str;
 }
 
@@ -450,5 +454,46 @@ pub mod fuzz_tests {
 
             assert_eq!(self.key, key);
         }
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<V: PieVersion, K: PieWrapType<V>> serde::Serialize for PieWrappedKey<V, K> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
+#[cfg(feature = "serde")]
+impl<'de, V: PieVersion, K: PieWrapType<V>> serde::Deserialize<'de> for PieWrappedKey<V, K> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct FromStrVisitor<V, K>(std::marker::PhantomData<(V, K)>);
+        impl<'de, V: PieVersion, K: PieWrapType<V>> serde::de::Visitor<'de> for FromStrVisitor<V, K> {
+            type Value = PieWrappedKey<V, K>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                write!(
+                    formatter,
+                    "a \"{}{}pie.\" serialized key",
+                    V::KEY_HEADER,
+                    K::WRAP_HEADER
+                )
+            }
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                v.parse().map_err(E::custom)
+            }
+        }
+        deserializer.deserialize_str(FromStrVisitor(std::marker::PhantomData))
     }
 }

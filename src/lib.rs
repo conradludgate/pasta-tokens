@@ -1,3 +1,6 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
 //! [Platform-Agnostic Serialized Keys](https://github.com/paseto-standard/paserk)
 //!
 //! PASERK is an extension to [PASETO](https://paseto.io) that provides key-wrapping and serialization.
