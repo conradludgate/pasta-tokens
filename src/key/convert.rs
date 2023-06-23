@@ -169,6 +169,10 @@ impl Key<V3, Local> {
     pub fn from_bytes(key: [u8; 32]) -> Self {
         Self { key: key.into() }
     }
+    /// Get the raw bytes from this key
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.key.into()
+    }
 }
 
 #[cfg(feature = "v4")]
@@ -176,6 +180,10 @@ impl Key<V4, Local> {
     /// Create a V4 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
         Self { key: key.into() }
+    }
+    /// Get the raw bytes from this key
+    pub fn to_bytes(&self) -> [u8; 32] {
+        self.key.into()
     }
 }
 
