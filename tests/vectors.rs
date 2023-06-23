@@ -17,7 +17,7 @@ fn main() {
     KeyTest::add_all_tests(&mut tests);
     PbkwTest::add_all_tests(&mut tests);
     PkeTest::add_all_tests(&mut tests);
-    WrapTest::add_all_tests(&mut tests);
+    PieWrapTest::add_all_tests(&mut tests);
 
     libtest_mimic::run(&args, tests).exit();
 }
@@ -30,7 +30,6 @@ fn read_test<Test: DeserializeOwned>(v: &str) -> TestFile<Test> {
 
 #[derive(Deserialize)]
 struct TestFile<T> {
-    name: String,
     tests: Vec<Test<T>>,
 }
 
@@ -49,23 +48,22 @@ struct IdTest {
 
 impl IdTest {
     fn add_all_tests(tests: &mut Vec<Trial>) {
-        Self::add_tests::<V3, Local>(tests, "k3.lid.json");
-        Self::add_tests::<V4, Local>(tests, "k4.lid.json");
-        Self::add_tests::<V3, Secret>(tests, "k3.sid.json");
-        Self::add_tests::<V4, Secret>(tests, "k4.sid.json");
-        Self::add_tests::<V3, Public>(tests, "k3.pid.json");
-        Self::add_tests::<V4, Public>(tests, "k4.pid.json");
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
+        Self::add_tests::<V3, Public>(tests);
+        Self::add_tests::<V4, Public>(tests);
     }
 
-    fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>, file: &str)
+    fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
     where
         Key<V, K>: NewKey,
         KeyId<V, K>: From<Key<V, K>>,
     {
-        let test_file: TestFile<Self> = read_test(file);
+        let test_file: TestFile<Self> = read_test(&format!("{}{}json", V::KEY_HEADER, K::ID));
         for test in test_file.tests {
-            let name = format!("{} > {}", test_file.name, test.name);
-            tests.push(Trial::test(name, || test.test_data.test::<V, K>()));
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
         }
     }
 
@@ -99,22 +97,21 @@ struct KeyTest {
 
 impl KeyTest {
     fn add_all_tests(tests: &mut Vec<Trial>) {
-        Self::add_tests::<V3, Local>(tests, "k3.local.json");
-        Self::add_tests::<V4, Local>(tests, "k4.local.json");
-        Self::add_tests::<V3, Secret>(tests, "k3.secret.json");
-        Self::add_tests::<V4, Secret>(tests, "k4.secret.json");
-        Self::add_tests::<V3, Public>(tests, "k3.public.json");
-        Self::add_tests::<V4, Public>(tests, "k4.public.json");
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
+        Self::add_tests::<V3, Public>(tests);
+        Self::add_tests::<V4, Public>(tests);
     }
 
-    fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>, file: &str)
+    fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
     where
         Key<V, K>: NewKey,
     {
-        let test_file: TestFile<Self> = read_test(file);
+        let test_file: TestFile<Self> = read_test(&format!("{}{}json", V::KEY_HEADER, K::HEADER));
         for test in test_file.tests {
-            let name = format!("{} > {}", test_file.name, test.name);
-            tests.push(Trial::test(name, || test.test_data.test::<V, K>()));
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
         }
     }
 
@@ -158,17 +155,17 @@ struct PbkwTest {
 
 impl PbkwTest {
     fn add_all_tests(tests: &mut Vec<Trial>) {
-        Self::add_tests::<V3, Local>(tests, "k3.local-pw.json");
-        Self::add_tests::<V4, Local>(tests, "k4.local-pw.json");
-        Self::add_tests::<V3, Secret>(tests, "k3.secret-pw.json");
-        Self::add_tests::<V4, Secret>(tests, "k4.secret-pw.json");
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
     }
 
-    fn add_tests<V: PwVersion, K: PwWrapType<V>>(tests: &mut Vec<Trial>, file: &str) {
-        let test_file: TestFile<Self> = read_test(file);
+    fn add_tests<V: PwVersion, K: PwWrapType<V>>(tests: &mut Vec<Trial>) {
+        let test_file: TestFile<Self> =
+            read_test(&format!("{}{}json", V::KEY_HEADER, K::WRAP_HEADER));
         for test in test_file.tests {
-            let name = format!("{} > {}", test_file.name, test.name);
-            tests.push(Trial::test(name, || test.test_data.test::<V, K>()));
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
         }
     }
 
@@ -209,18 +206,17 @@ struct PkeTest {
 
 impl PkeTest {
     fn add_all_tests(tests: &mut Vec<Trial>) {
-        Self::add_tests::<V3>(tests, "k3.seal.json");
-        Self::add_tests::<V4>(tests, "k4.seal.json");
+        Self::add_tests::<V3>(tests);
+        Self::add_tests::<V4>(tests);
     }
 
-    fn add_tests<V: SealedVersion>(tests: &mut Vec<Trial>, file: &str)
+    fn add_tests<V: SealedVersion>(tests: &mut Vec<Trial>)
     where
         Key<V, Secret>: NewKey2,
     {
-        let test_file: TestFile<Self> = read_test(file);
+        let test_file: TestFile<Self> = read_test(&format!("{}seal.json", V::KEY_HEADER));
         for test in test_file.tests {
-            let name = format!("{} > {}", test_file.name, test.name);
-            tests.push(Trial::test(name, || test.test_data.test::<V>()));
+            tests.push(Trial::test(test.name, || test.test_data.test::<V>()));
         }
     }
 
@@ -253,7 +249,7 @@ impl PkeTest {
 }
 
 #[derive(Deserialize)]
-struct WrapTest {
+struct PieWrapTest {
     #[serde(rename = "expect-fail")]
     expect_fail: bool,
     paserk: String,
@@ -263,22 +259,22 @@ struct WrapTest {
     wrapping_key: String,
 }
 
-impl WrapTest {
+impl PieWrapTest {
     fn add_all_tests(tests: &mut Vec<Trial>) {
-        Self::add_tests::<V3, Local>(tests, "k3.local-wrap.pie.json");
-        Self::add_tests::<V4, Local>(tests, "k4.local-wrap.pie.json");
-        Self::add_tests::<V3, Secret>(tests, "k3.secret-wrap.pie.json");
-        Self::add_tests::<V4, Secret>(tests, "k4.secret-wrap.pie.json");
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
     }
 
-    fn add_tests<V: PieVersion, K: PieWrapType<V>>(tests: &mut Vec<Trial>, file: &str)
+    fn add_tests<V: PieVersion, K: PieWrapType<V>>(tests: &mut Vec<Trial>)
     where
         Key<V, Local>: NewKey,
     {
-        let test_file: TestFile<Self> = read_test(file);
+        let test_file: TestFile<Self> =
+            read_test(&format!("{}{}pie.json", V::KEY_HEADER, K::WRAP_HEADER));
         for test in test_file.tests {
-            let name = format!("{} > {}", test_file.name, test.name);
-            tests.push(Trial::test(name, || test.test_data.test::<V, K>()));
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
         }
     }
 
