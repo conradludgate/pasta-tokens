@@ -56,7 +56,7 @@ fn local_v4() {
 
     for test in test_file.tests {
         let ssk = hex::decode(&test.sealing_secret_key).unwrap();
-        let ssk = Key::<V4, Secret>::try_from(&*ssk).unwrap();
+        let ssk = Key::<V4, Secret>::from_keypair_bytes(&ssk).unwrap();
 
         run_test(&test_file.name, test, ssk)
     }

@@ -187,6 +187,7 @@ mod pbkw;
 mod pke;
 mod wrap;
 
+/// Internally used traits for encryption version configuration
 pub mod internal {
     pub use crate::pbkw::{PwType, PwVersion, PwWrapType};
     pub use crate::pke::SealedVersion;

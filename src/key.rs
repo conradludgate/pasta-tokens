@@ -100,18 +100,7 @@ impl<V: Version, K: KeyType<V>> Clone for Key<V, K> {
     }
 }
 
-#[cfg(feature = "v3")]
-impl Copy for Key<V3, Local> {}
-#[cfg(feature = "v4")]
-impl Copy for Key<V4, Local> {}
-#[cfg(feature = "v3")]
-impl Copy for Key<V3, Public> {}
-#[cfg(feature = "v4")]
-impl Copy for Key<V4, Public> {}
-#[cfg(feature = "v3")]
-impl Copy for Key<V3, Secret> {}
-#[cfg(feature = "v4")]
-impl Copy for Key<V4, Secret> {}
+impl<V: Version, K: KeyType<V>> Copy for Key<V, K> where GenericArray<u8, K::KeyLen>: Copy {}
 
 impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

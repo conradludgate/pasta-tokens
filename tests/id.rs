@@ -17,16 +17,14 @@ struct TestFile {
 
 fn id<V: Version, K: KeyType<V>>(test_file: TestFile)
 where
+    Key<V, K>: NewKey,
     KeyId<V, K>: From<Key<V, K>>,
 {
     for test in test_file.tests {
+        dbg!(&test_file.name, &test.name);
         if let Some(paserk) = test.paserk {
-            let key: Key<V, K> = hex::decode(test.key)
-                .unwrap()
-                .as_slice()
-                .try_into()
-                .unwrap();
-            let kid: KeyId<V, K> = key.into();
+            let key = Key::<V, K>::from_key(&test.key);
+            let kid: KeyId<V, K> = key.to_id();
             let kid2: KeyId<V, K> = paserk.parse().unwrap();
 
             assert_eq!(kid, kid2, "{} > {}: kid failed", test_file.name, test.name);
@@ -81,4 +79,50 @@ fn secret_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.sid.json")).unwrap();
     id::<V4, Secret>(test_file);
+}
+
+trait NewKey {
+    fn from_key(s: &str) -> Self;
+}
+
+impl NewKey for Key<V3, Local> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
+
+impl NewKey for Key<V4, Local> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
+
+impl NewKey for Key<V3, Secret> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(&b).unwrap()
+    }
+}
+
+impl NewKey for Key<V4, Secret> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_keypair_bytes(&b).unwrap()
+    }
+}
+
+impl NewKey for Key<V3, Public> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_sec1_bytes(&b).unwrap()
+    }
+}
+
+impl NewKey for Key<V4, Public> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_public_key(&b).unwrap()
+    }
 }

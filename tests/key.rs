@@ -17,20 +17,24 @@ struct TestFile {
     tests: Vec<Test>,
 }
 
-fn key<V: Version, K: KeyType<V>>(test_file: TestFile) {
+fn key<V: Version, K: KeyType<V>>(test_file: TestFile)
+where
+    Key<V, K>: NewKey,
+{
     for test in test_file.tests {
         match (test.key, test.paserk) {
             (Some(key), Some(paserk)) => {
                 let key2: PlaintextKey<V, K> = paserk.parse().unwrap();
-                let key: Key<V, K> = hex::decode(key).unwrap().as_slice().try_into().unwrap();
+                let key = Key::<V, K>::from_key(&key);
+
+                let paserk2 = PlaintextKey(key.clone()).to_string();
+                dbg!(&paserk2);
 
                 assert_eq!(
                     key, key2.0,
                     "{} > {}: decode failed",
                     test_file.name, test.name
                 );
-
-                let paserk2 = key2.to_string();
 
                 assert_eq!(
                     paserk, paserk2,
@@ -46,15 +50,7 @@ fn key<V: Version, K: KeyType<V>>(test_file: TestFile) {
                         test_file.name, test.name
                     ));
             }
-            (Some(key), None) => {
-                let key = hex::decode(key).unwrap();
-                Key::<V, K>::try_from(&*key)
-                    .map(|_| {})
-                    .expect_err(&format!(
-                        "{} > {}: decode succeeded",
-                        test_file.name, test.name
-                    ));
-            }
+            (Some(_), None) => {}
             (None, None) => {}
         }
     }
@@ -100,4 +96,50 @@ fn secret_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.secret.json")).unwrap();
     key::<V4, Secret>(test_file);
+}
+
+trait NewKey {
+    fn from_key(s: &str) -> Self;
+}
+
+impl NewKey for Key<V3, Local> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
+
+impl NewKey for Key<V4, Local> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
+
+impl NewKey for Key<V3, Secret> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(&b).unwrap()
+    }
+}
+
+impl NewKey for Key<V4, Secret> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_keypair_bytes(&b).unwrap()
+    }
+}
+
+impl NewKey for Key<V3, Public> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_sec1_bytes(&b).unwrap()
+    }
+}
+
+impl NewKey for Key<V4, Public> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_public_key(&b).unwrap()
+    }
 }

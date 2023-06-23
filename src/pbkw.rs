@@ -163,6 +163,7 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
 }
 
 impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
+    /// Unwrap the password wrapped key
     pub fn unwrap_key(mut self, password: &[u8]) -> Result<Key<V, K>, PasetoError> {
         let k = V::kdf(password, &self.salt, &self.state);
 
@@ -196,6 +197,13 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
         <V::Cipher as KeyIvInit>::new(&ek, &self.nonce).apply_keystream(&mut self.edk);
 
         Ok(Key { key: self.edk })
+    }
+
+    /// Return the password KDF settings that were used to encrypt the key.
+    /// This is important to check prevent DOS attacks otherwise an attacked can
+    /// send a key with arbitrary large memory and iteration counts.
+    pub fn settings(&self) -> &V::KdfState {
+        &self.state
     }
 }
 

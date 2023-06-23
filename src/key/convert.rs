@@ -1,4 +1,3 @@
-use cipher::Unsigned;
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 use rusty_paseto::core::PasetoError;
@@ -12,7 +11,7 @@ use crate::{Key, KeyType, Local, Public, Secret, Version};
 
 #[cfg(feature = "v3")]
 impl Key<V3, Secret> {
-    /// Decode a PEM encoded SEC1 Ed25519 Secret Key
+    /// Decode a PEM encoded SEC1 p384 Secret Key
     ///
     /// ```
     /// use rusty_paserk::Key;
@@ -30,11 +29,30 @@ impl Key<V3, Secret> {
         let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::Cryption)?;
         Ok(Self { key: sk.to_bytes() })
     }
+
+    /// Decode a secret key from raw bytes
+    pub fn from_bytes(s: &[u8]) -> Result<Self, PasetoError> {
+        let sk = p384::SecretKey::from_slice(s).map_err(|_| PasetoError::Cryption)?;
+        Ok(Self { key: sk.to_bytes() })
+    }
+
+    /// Get the corresponding V3 public key for this V3 secret key
+    pub fn public_key(&self) -> Key<V3, Public> {
+        use p384::{EncodedPoint, SecretKey};
+
+        let sk = SecretKey::from_bytes(&self.key).unwrap();
+        let pk: EncodedPoint = sk.public_key().into();
+        let pk = pk.compress();
+        let pk = pk.as_bytes();
+        Key {
+            key: *GenericArray::from_slice(pk),
+        }
+    }
 }
 
 #[cfg(feature = "v3")]
 impl Key<V3, Public> {
-    /// Decode a PEM encoded Ed25519 Public Key
+    /// Decode a PEM encoded p384 Public Key
     ///
     /// ```
     /// use rusty_paserk::Key;
@@ -59,73 +77,60 @@ impl Key<V3, Public> {
             key: *GenericArray::from_slice(pk),
         })
     }
-}
 
-impl<V: Version, K: KeyType<V>> TryFrom<&[u8]> for Key<V, K> {
-    type Error = PasetoError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() != <K::KeyLen as Unsigned>::USIZE {
-            return Err(PasetoError::IncorrectSize);
-        }
-        let mut key: GenericArray<u8, K::KeyLen> = Default::default();
-        key.copy_from_slice(value);
-        Ok(Key { key })
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<[u8; 32]> for Key<V3, Local> {
-    fn from(key: [u8; 32]) -> Self {
-        Self { key: key.into() }
-    }
-}
-
-#[cfg(feature = "v3")]
-impl TryFrom<[u8; 48]> for Key<V3, Secret> {
-    type Error = PasetoError;
-    fn try_from(key: [u8; 48]) -> Result<Self, Self::Error> {
-        use p384::SecretKey;
-        let key = key.into();
-        if SecretKey::from_bytes(&key).is_err() {
-            Err(PasetoError::InvalidKey)
-        } else {
-            Ok(Self { key })
-        }
-    }
-}
-
-#[cfg(feature = "v3")]
-impl Key<V3, Secret> {
-    /// Get the corresponding V3 public key for this V3 secret key
-    pub fn public_key(&self) -> Key<V3, Public> {
-        use p384::{EncodedPoint, SecretKey};
-
-        let sk = SecretKey::from_bytes(&self.key).unwrap();
-        let pk: EncodedPoint = sk.public_key().into();
+    /// Decode a public key from raw bytes
+    pub fn from_sec1_bytes(s: &[u8]) -> Result<Self, PasetoError> {
+        let pk = p384::PublicKey::from_sec1_bytes(s).map_err(|_| PasetoError::Cryption)?;
+        let pk: p384::EncodedPoint = pk.into();
         let pk = pk.compress();
         let pk = pk.as_bytes();
-        Key {
+        Ok(Self {
             key: *GenericArray::from_slice(pk),
-        }
+        })
     }
 }
 
 #[cfg(feature = "v4")]
-impl TryFrom<[u8; 64]> for Key<V4, Secret> {
-    type Error = PasetoError;
-    fn try_from(key: [u8; 64]) -> Result<Self, Self::Error> {
+impl Key<V4, Secret> {
+    /// Decode an Ed25519 Secret Keypair
+    ///
+    /// ```
+    /// use rusty_paserk::Key;
+    ///
+    /// let private_key = "407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1db7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023";
+    /// let private_key = hex::decode(&private_key).unwrap();
+    ///
+    /// let _key = Key::from_keypair_bytes(&private_key).unwrap();
+    /// ```
+    pub fn from_keypair_bytes(key: &[u8]) -> Result<Self, PasetoError> {
         use ed25519_dalek::SigningKey;
+        let key: [u8; 64] = key.try_into().map_err(|_| PasetoError::InvalidKey)?;
         match SigningKey::from_keypair_bytes(&key) {
             Ok(_) => {}
             Err(_) => return Err(PasetoError::InvalidKey),
         };
         Ok(Key { key: key.into() })
     }
-}
 
-#[cfg(feature = "v4")]
-impl Key<V4, Secret> {
+    /// Create a new secret key from the byte array
+    ///
+    /// ```
+    /// use rusty_paserk::Key;
+    ///
+    /// let private_key = "407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1d";
+    /// let private_key = hex::decode(&private_key).unwrap();
+    /// let private_key: [u8; 32] = private_key.try_into().unwrap();
+    ///
+    /// let _key = Key::from_secret_key(private_key);
+    /// ```
+    pub fn from_secret_key(key: [u8; 32]) -> Self {
+        Self {
+            key: ed25519_dalek::SigningKey::from_bytes(&key)
+                .to_keypair_bytes()
+                .into(),
+        }
+    }
+
     /// Get the corresponding V4 public key for this V4 secret key
     pub fn public_key(&self) -> Key<V4, Public> {
         use generic_array::sequence::Split;
@@ -134,6 +139,43 @@ impl Key<V4, Secret> {
             GenericArray<u8, generic_array::typenum::U32>,
         ) = self.key.split();
         Key { key: pk }
+    }
+}
+
+#[cfg(feature = "v4")]
+impl Key<V4, Public> {
+    /// Decode a PEM encoded SEC1 Ed25519 Secret Key
+    ///
+    /// ```
+    /// use rusty_paserk::Key;
+    ///
+    /// let public_key = "b7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023";
+    /// let public_key = hex::decode(&public_key).unwrap();
+    ///
+    /// let _key = Key::from_public_key(&public_key);
+    /// ```
+    pub fn from_public_key(key: &[u8]) -> Result<Self, PasetoError> {
+        let key = key.try_into().map_err(|_| PasetoError::InvalidKey)?;
+        let _ =
+            ed25519_dalek::VerifyingKey::from_bytes(&key).map_err(|_| PasetoError::InvalidKey)?;
+
+        Ok(Self { key: key.into() })
+    }
+}
+
+#[cfg(feature = "v3")]
+impl Key<V3, Local> {
+    /// Create a V3 local key from raw bytes
+    pub fn from_bytes(key: [u8; 32]) -> Self {
+        Self { key: key.into() }
+    }
+}
+
+#[cfg(feature = "v4")]
+impl Key<V4, Local> {
+    /// Create a V4 local key from raw bytes
+    pub fn from_bytes(key: [u8; 32]) -> Self {
+        Self { key: key.into() }
     }
 }
 

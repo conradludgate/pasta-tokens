@@ -71,6 +71,9 @@ impl<V: SealedVersion> Key<V, Local> {
         self.seal_with_rng(sealing_key, &mut OsRng)
     }
 
+    /// Seal a local key, encrypted with an asymmetric wrapping key.
+    ///
+    /// The ephemeral key is generated from the provided random source.
     pub fn seal_with_rng(
         &self,
         sealing_key: &Key<V, Public>,
@@ -81,6 +84,7 @@ impl<V: SealedVersion> Key<V, Local> {
 }
 
 impl<V: SealedVersion> SealedKey<V> {
+    /// Unseal an encrypted local key.
     pub fn unseal(self, unsealing_key: &Key<V, Secret>) -> Result<Key<V, Local>, PasetoError> {
         V::unseal(self, unsealing_key)
     }

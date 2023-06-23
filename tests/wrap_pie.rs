@@ -27,10 +27,10 @@ fn wrap_test<V, K>(test_file: TestFile)
 where
     V: PieVersion,
     K: PieWrapType<V>,
+    Key<V, Local>: NewKey,
 {
     for test in test_file.tests {
-        let wrapping = hex::decode(test.wrapping_key).unwrap();
-        let wrapping_key = Key::<V, Local>::try_from(&*wrapping).unwrap();
+        let wrapping_key = Key::<V, Local>::from_key(&test.wrapping_key);
 
         if test.expect_fail {
             let Ok(wrapped_key): Result<PieWrappedKey<V, K>, _> = test.paserk.parse() else {
@@ -98,4 +98,22 @@ fn secret_v4() {
     let test_file: TestFile =
         serde_json::from_str(include_str!("test-vectors/k4.secret-wrap.pie.json")).unwrap();
     wrap_test::<V4, Secret>(test_file);
+}
+
+trait NewKey {
+    fn from_key(s: &str) -> Self;
+}
+
+impl NewKey for Key<V3, Local> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
+
+impl NewKey for Key<V4, Local> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
 }
