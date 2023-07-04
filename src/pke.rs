@@ -347,13 +347,17 @@ impl SealedVersion for V4 {
         let epk = x25519_dalek::PublicKey::from(epk);
 
         // expand sk
-        let xsk = sha2::Sha512::default()
+        let mut xsk: [u8; 32] = sha2::Sha512::default()
             .chain_update(&unsealing_key.as_ref()[..32])
             .finalize()[..32]
             .try_into()
             .unwrap();
-        let xsk = curve25519_dalek::Scalar::from_bits_clamped(xsk);
-        let xsk = x25519_dalek::StaticSecret::from(xsk.to_bytes());
+
+        xsk[0] &= 0b1111_1000;
+        xsk[31] &= 0b0111_1111;
+        xsk[31] |= 0b0100_0000;
+
+        let xsk = x25519_dalek::StaticSecret::from(xsk);
         let xpk: x25519_dalek::PublicKey = (&xsk).into();
 
         let xk = xsk.diffie_hellman(&epk);
