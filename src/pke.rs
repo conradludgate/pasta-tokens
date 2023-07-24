@@ -283,18 +283,26 @@ impl SealedVersion for V4 {
         sealing_key: &Key<Self, Public>,
         rng: &mut (impl RngCore + CryptoRng),
     ) -> SealedKey<Self> {
+        use curve25519_dalek::{
+            edwards::{CompressedEdwardsY, EdwardsPoint},
+            scalar::{clamp_integer, Scalar},
+        };
+
         // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
-        let pk = curve25519_dalek::edwards::CompressedEdwardsY::from_slice(sealing_key.as_ref())
-            .unwrap();
+        let pk = CompressedEdwardsY(sealing_key.key.into());
 
         // step 1: Calculate the birationally-equivalent X25519 public key (xpk) from pk.
-        // I wish the edwards point/montgomery point types were exposed by x/ed25519 libraries
-        let xpk: x25519_dalek::PublicKey = pk.decompress().unwrap().to_montgomery().0.into();
+        let xpk = pk.decompress().unwrap().to_montgomery();
 
-        let esk = x25519_dalek::EphemeralSecret::random_from_rng(rng);
-        let epk = x25519_dalek::PublicKey::from(&esk);
+        let esk = Scalar::from_bytes_mod_order(clamp_integer({
+            let mut esk = [0; 32];
+            rng.fill_bytes(&mut esk);
+            esk
+        }));
+        let epk = EdwardsPoint::mul_base(&esk).to_montgomery();
 
-        let xk = esk.diffie_hellman(&xpk);
+        // diffie hellman exchange
+        let xk = esk * xpk;
 
         let ek = blake2::Blake2b::new()
             .chain_update([0x01])
@@ -343,24 +351,22 @@ impl SealedVersion for V4 {
         mut sealed_key: SealedKey<Self>,
         unsealing_key: &Key<Self, Secret>,
     ) -> Result<Key<Self, Local>, PasetoError> {
+        use curve25519_dalek::edwards::CompressedEdwardsY;
+        use ed25519_dalek::hazmat::ExpandedSecretKey;
+
         let epk: [u8; 32] = sealed_key.ephemeral_public_key.into();
-        let epk = x25519_dalek::PublicKey::from(epk);
+        let epk = curve25519_dalek::MontgomeryPoint(epk);
 
-        // expand sk
-        let mut xsk: [u8; 32] = sha2::Sha512::default()
-            .chain_update(&unsealing_key.as_ref()[..32])
-            .finalize()[..32]
-            .try_into()
-            .unwrap();
+        // expand pk/sk pair from ed25519 to x25519
+        let (sk, pk) = unsealing_key.key.split();
+        let pk = CompressedEdwardsY(pk.into());
+        let xpk = pk.decompress().unwrap().to_montgomery();
 
-        xsk[0] &= 0b1111_1000;
-        xsk[31] &= 0b0111_1111;
-        xsk[31] |= 0b0100_0000;
+        let sk: ed25519_dalek::SecretKey = sk.into();
+        let xsk = ExpandedSecretKey::from(&sk);
 
-        let xsk = x25519_dalek::StaticSecret::from(xsk);
-        let xpk: x25519_dalek::PublicKey = (&xsk).into();
-
-        let xk = xsk.diffie_hellman(&epk);
+        // diffie hellman exchange
+        let xk = xsk.scalar * epk;
 
         let ak = blake2::Blake2b::<generic_array::typenum::U32>::new()
             .chain_update([0x02])

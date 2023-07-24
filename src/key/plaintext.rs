@@ -62,7 +62,12 @@ impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for PlaintextKey<V,
             type Value = PlaintextKey<V, K>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a \"{}{}\" serialized key", V::KEY_HEADER, K::HEADER)
+                write!(
+                    formatter,
+                    "a \"{}{}\" serialized key",
+                    V::KEY_HEADER,
+                    K::HEADER
+                )
             }
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where

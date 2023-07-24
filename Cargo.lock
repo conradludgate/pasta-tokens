@@ -1117,7 +1117,7 @@ dependencies = [
 
 [[package]]
 name = "rusty_paserk"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "aes 0.8.3",
  "arbitrary",
@@ -1144,7 +1144,6 @@ dependencies = [
  "serde_json",
  "sha2 0.10.7",
  "subtle",
- "x25519-dalek",
 ]
 
 [[package]]
@@ -1614,18 +1613,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
-]
-
-[[package]]
-name = "x25519-dalek"
-version = "2.0.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec7fae07da688e17059d5886712c933bb0520f15eff2e09cfa18e30968f4e63a"
-dependencies = [
- "curve25519-dalek 4.0.0-rc.3",
- "rand_core 0.6.4",
- "serde",
- "zeroize",
 ]
 
 [[package]]

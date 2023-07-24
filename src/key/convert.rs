@@ -134,10 +134,7 @@ impl Key<V4, Secret> {
     /// Get the corresponding V4 public key for this V4 secret key
     pub fn public_key(&self) -> Key<V4, Public> {
         use generic_array::sequence::Split;
-        let (_sk, pk): (
-            GenericArray<u8, generic_array::typenum::U32>,
-            GenericArray<u8, generic_array::typenum::U32>,
-        ) = self.key.split();
+        let (_sk, pk): (GenericArray<u8, generic_array::typenum::U32>, _) = self.key.split();
         Key { key: pk }
     }
 }
