@@ -1,16 +1,12 @@
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, CryptoRng, RngCore};
-use rusty_paseto::core::PasetoError;
+
+use crate::{
+    local::LocalVersion, Key, KeyType, PasetoError, PublicKey, SecretKey, SymmetricKey, Version,
+};
 
 #[cfg(feature = "v3")]
-use rusty_paseto::core::V3;
-#[cfg(feature = "v4")]
-use rusty_paseto::core::V4;
-
-use crate::{Key, KeyType, Local, Public, Secret, Version};
-
-#[cfg(feature = "v3")]
-impl Key<V3, Secret> {
+impl SecretKey<crate::V3> {
     /// Decode a PEM encoded SEC1 p384 Secret Key
     ///
     /// ```
@@ -26,18 +22,18 @@ impl Key<V3, Secret> {
     /// let _key = Key::from_sec1_pem(private_key).unwrap();
     /// ```
     pub fn from_sec1_pem(s: &str) -> Result<Self, PasetoError> {
-        let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::Cryption)?;
+        let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::InvalidKey)?;
         Ok(Self { key: sk.to_bytes() })
     }
 
     /// Decode a secret key from raw bytes
     pub fn from_bytes(s: &[u8]) -> Result<Self, PasetoError> {
-        let sk = p384::SecretKey::from_slice(s).map_err(|_| PasetoError::Cryption)?;
+        let sk = p384::SecretKey::from_slice(s).map_err(|_| PasetoError::InvalidKey)?;
         Ok(Self { key: sk.to_bytes() })
     }
 
     /// Get the corresponding V3 public key for this V3 secret key
-    pub fn public_key(&self) -> Key<V3, Public> {
+    pub fn public_key(&self) -> PublicKey<crate::V3> {
         use p384::{EncodedPoint, SecretKey};
 
         let sk = SecretKey::from_bytes(&self.key).unwrap();
@@ -51,7 +47,7 @@ impl Key<V3, Secret> {
 }
 
 #[cfg(feature = "v3")]
-impl Key<V3, Public> {
+impl PublicKey<crate::V3> {
     /// Decode a PEM encoded p384 Public Key
     ///
     /// ```
@@ -68,7 +64,7 @@ impl Key<V3, Public> {
     pub fn from_public_key_pem(s: &str) -> Result<Self, PasetoError> {
         use p384::{pkcs8::DecodePublicKey, EncodedPoint};
 
-        let pk = p384::PublicKey::from_public_key_pem(s).map_err(|_| PasetoError::Cryption)?;
+        let pk = p384::PublicKey::from_public_key_pem(s).map_err(|_| PasetoError::InvalidKey)?;
         let pk: EncodedPoint = pk.into();
         let pk = pk.compress();
         let pk = pk.as_bytes();
@@ -80,7 +76,7 @@ impl Key<V3, Public> {
 
     /// Decode a public key from raw bytes
     pub fn from_sec1_bytes(s: &[u8]) -> Result<Self, PasetoError> {
-        let pk = p384::PublicKey::from_sec1_bytes(s).map_err(|_| PasetoError::Cryption)?;
+        let pk = p384::PublicKey::from_sec1_bytes(s).map_err(|_| PasetoError::InvalidKey)?;
         let pk: p384::EncodedPoint = pk.into();
         let pk = pk.compress();
         let pk = pk.as_bytes();
@@ -91,7 +87,7 @@ impl Key<V3, Public> {
 }
 
 #[cfg(feature = "v4")]
-impl Key<V4, Secret> {
+impl SecretKey<crate::V4> {
     /// Decode an Ed25519 Secret Keypair
     ///
     /// ```
@@ -132,7 +128,7 @@ impl Key<V4, Secret> {
     }
 
     /// Get the corresponding V4 public key for this V4 secret key
-    pub fn public_key(&self) -> Key<V4, Public> {
+    pub fn public_key(&self) -> PublicKey<crate::V4> {
         use generic_array::sequence::Split;
         let (_sk, pk): (GenericArray<u8, generic_array::typenum::U32>, _) = self.key.split();
         Key { key: pk }
@@ -140,7 +136,7 @@ impl Key<V4, Secret> {
 }
 
 #[cfg(feature = "v4")]
-impl Key<V4, Public> {
+impl PublicKey<crate::V4> {
     /// Decode a PEM encoded SEC1 Ed25519 Secret Key
     ///
     /// ```
@@ -161,7 +157,7 @@ impl Key<V4, Public> {
 }
 
 #[cfg(feature = "v3")]
-impl Key<V3, Local> {
+impl SymmetricKey<crate::V3> {
     /// Create a V3 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
         Self { key: key.into() }
@@ -173,7 +169,7 @@ impl Key<V3, Local> {
 }
 
 #[cfg(feature = "v4")]
-impl Key<V4, Local> {
+impl SymmetricKey<crate::V4> {
     /// Create a V4 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
         Self { key: key.into() }
@@ -190,7 +186,7 @@ impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
     }
 }
 
-impl<V: Version> Key<V, Local> {
+impl<V: LocalVersion> SymmetricKey<V> {
     /// Generate a random local key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)
@@ -205,7 +201,7 @@ impl<V: Version> Key<V, Local> {
 }
 
 #[cfg(feature = "v4")]
-impl Key<V4, Secret> {
+impl SecretKey<crate::V4> {
     /// Generate a random V4 secret key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)
@@ -224,7 +220,7 @@ impl Key<V4, Secret> {
 }
 
 #[cfg(feature = "v3")]
-impl Key<V3, Secret> {
+impl SecretKey<crate::V3> {
     /// Generate a random V3 secret key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)
@@ -235,59 +231,5 @@ impl Key<V3, Secret> {
         Self {
             key: p384::SecretKey::random(rng).to_bytes(),
         }
-    }
-}
-
-#[cfg(feature = "v4")]
-impl From<Key<V4, Local>>
-    for rusty_paseto::core::PasetoSymmetricKey<V4, rusty_paseto::core::Local>
-{
-    fn from(key: Key<V4, Local>) -> Self {
-        let key: [u8; 32] = key.key.into();
-        let key: rusty_paseto::core::Key<32> = key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<Key<V3, Local>>
-    for rusty_paseto::core::PasetoSymmetricKey<V3, rusty_paseto::core::Local>
-{
-    fn from(key: Key<V3, Local>) -> Self {
-        let key: [u8; 32] = key.key.into();
-        let key: rusty_paseto::core::Key<32> = key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v4")]
-impl From<Key<V4, Public>> for rusty_paseto::core::Key<32> {
-    fn from(key: Key<V4, Public>) -> Self {
-        let key: [u8; 32] = key.key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v4")]
-impl From<Key<V4, Secret>> for rusty_paseto::core::Key<64> {
-    fn from(key: Key<V4, Secret>) -> Self {
-        let key: [u8; 64] = key.key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<Key<V3, Public>> for rusty_paseto::core::Key<49> {
-    fn from(key: Key<V3, Public>) -> Self {
-        let key: [u8; 49] = key.key.into();
-        key.into()
-    }
-}
-
-#[cfg(feature = "v3")]
-impl From<Key<V3, Secret>> for rusty_paseto::core::Key<48> {
-    fn from(key: Key<V3, Secret>) -> Self {
-        let key: [u8; 48] = key.key.into();
-        key.into()
     }
 }

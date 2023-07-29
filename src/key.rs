@@ -2,56 +2,14 @@ use std::fmt;
 
 use generic_array::{ArrayLength, GenericArray};
 
-#[cfg(feature = "v3")]
-use rusty_paseto::core::V3;
-#[cfg(feature = "v4")]
-use rusty_paseto::core::V4;
-
-/// General information about a PASETO/PASERK version
-pub trait Version {
-    /// Size of the symmetric local key
-    type Local: ArrayLength<u8>;
-    /// Size of the asymmetric public key
-    type Public: ArrayLength<u8>;
-    /// Size of the asymmetric secret key
-    type Secret: ArrayLength<u8>;
-    /// Header for PASETO
-    const TOKEN_HEADER: &'static str;
-    /// Header for PASERK
-    const KEY_HEADER: &'static str;
-}
-
-#[cfg(feature = "v3")]
-impl Version for V3 {
-    type Local = generic_array::typenum::U32;
-    /// P-384 Public Key in compressed format
-    type Public = generic_array::typenum::U49;
-    /// P-384 Secret Key (384 bits = 48 bytes)
-    type Secret = generic_array::typenum::U48;
-    const TOKEN_HEADER: &'static str = "v3.";
-    const KEY_HEADER: &'static str = "k3.";
-}
-
-#[cfg(feature = "v4")]
-impl Version for V4 {
-    type Local = generic_array::typenum::U32;
-    /// Compressed edwards y point
-    type Public = generic_array::typenum::U32;
-    /// Ed25519 scalar key, concatenated with the public key bytes
-    type Secret = generic_array::typenum::U64;
-    const TOKEN_HEADER: &'static str = "v4.";
-    const KEY_HEADER: &'static str = "k4.";
-}
+use crate::{PublicVersion, Version, local::{Local, LocalVersion}};
 
 /// Public verifying/encrypting keys
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Public;
 /// Secret signing/decrypting keys
 #[derive(Debug)]
 pub struct Secret;
-/// Local symmetric encryption/decrypting keys
-#[derive(Debug)]
-pub struct Local;
 
 /// General information about key types
 pub trait KeyType<V: Version> {
@@ -63,17 +21,17 @@ pub trait KeyType<V: Version> {
     const ID: &'static str;
 }
 
-impl<V: Version> KeyType<V> for Public {
+impl<V: PublicVersion> KeyType<V> for Public {
     type KeyLen = V::Public;
     const HEADER: &'static str = "public.";
     const ID: &'static str = "pid.";
 }
-impl<V: Version> KeyType<V> for Secret {
+impl<V: PublicVersion> KeyType<V> for Secret {
     type KeyLen = V::Secret;
     const HEADER: &'static str = "secret.";
     const ID: &'static str = "sid.";
 }
-impl<V: Version> KeyType<V> for Local {
+impl<V: LocalVersion> KeyType<V> for Local {
     type KeyLen = V::Local;
     const HEADER: &'static str = "local.";
     const ID: &'static str = "lid.";
@@ -117,5 +75,3 @@ mod convert;
 
 #[cfg(feature = "arbitrary")]
 mod arbitrary;
-
-pub mod plaintext;

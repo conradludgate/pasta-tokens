@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![forbid(unsafe_code)]
-#![warn(missing_docs)]
+// #![warn(missing_docs)]
 //! [Platform-Agnostic Serialized Keys](https://github.com/paseto-standard/paserk)
 //!
 //! PASERK is an extension to [PASETO](https://paseto.io) that provides key-wrapping and serialization.
@@ -159,42 +159,402 @@
 //!
 //! See the [`PwWrappedKey`] type for more info.
 
-use std::ops::DerefMut;
+use std::{borrow::Cow, fmt, ops::DerefMut, str::FromStr};
+
+type Bytes<N> = GenericArray<u8, N>;
+
+#[cfg(feature = "v3")]
+#[derive(Default)]
+pub struct V3;
+#[cfg(feature = "v4")]
+#[derive(Default)]
+pub struct V4;
 
 use base64ct::Encoding;
 use cipher::Unsigned;
-use generic_array::sequence::GenericSequence;
-#[cfg(feature = "v3")]
-pub use rusty_paseto::core::V3;
+use generic_array::{sequence::GenericSequence, ArrayLength, GenericArray};
 
-#[cfg(feature = "v4")]
-pub use rusty_paseto::core::V4;
+pub use key::{Key, KeyType, Public, Secret};
+use serde::{de::DeserializeOwned, Serialize};
 
-pub use rusty_paseto::core::PasetoError;
-
-pub use id::KeyId;
-pub use key::{plaintext::PlaintextKey, Key, KeyType, Local, Public, Secret, Version};
-pub use pbkw::PwWrappedKey;
-pub use pke::SealedKey;
-pub use wrap::PieWrappedKey;
-
-#[cfg(feature = "v3")]
-pub use pbkw::Pbkdf2State;
-
-#[cfg(feature = "v4")]
-pub use pbkw::Argon2State;
-
-mod id;
+mod base64ct2;
 mod key;
-mod pbkw;
-mod pke;
-mod wrap;
+mod local;
 
-/// Internally used traits for encryption version configuration
-pub mod internal {
-    pub use crate::pbkw::{PwType, PwVersion, PwWrapType};
-    pub use crate::pke::SealedVersion;
-    pub use crate::wrap::{PieVersion, PieWrapType, WrapType};
+/// General information about token types
+pub trait TokenType: Default {
+    /// "local" or "public"
+    const TOKEN_TYPE: &'static str;
+}
+
+fn pae(pieces: &[&str], out: &mut Vec<u8>) {
+    out.extend_from_slice(&(pieces.len() as u64).to_le_bytes());
+    for piece in pieces {
+        out.extend_from_slice(&(piece.len() as u64).to_le_bytes());
+        out.extend_from_slice(piece.as_bytes());
+    }
+}
+
+pub trait PayloadEncoding {
+    /// Suffix for this encoding type
+    const SUFFIX: &'static str;
+}
+
+pub trait MessageEncoding<M: Message>: PayloadEncoding {
+    fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error>>;
+    fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error>>;
+}
+
+pub struct JsonEncoding;
+
+impl PayloadEncoding for JsonEncoding {
+    const SUFFIX: &'static str = "";
+}
+impl<M: Message + Serialize + DeserializeOwned> MessageEncoding<M> for JsonEncoding {
+    fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        serde_json::to_vec(s).map_err(From::from)
+    }
+
+    fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error>> {
+        serde_json::from_slice(from).map_err(From::from)
+    }
+}
+
+pub trait Message {
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+pub trait Footer: Sized {
+    fn encode(&self) -> Vec<u8>;
+    fn decode(footer: Option<&str>) -> Result<Self, Box<dyn std::error::Error>>;
+}
+
+impl Footer for () {
+    fn encode(&self) -> Vec<u8> {
+        Vec::new()
+    }
+
+    fn decode(footer: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
+        match footer {
+            Some(x) => Err(format!("unexpected footer {x:?}").into()),
+            None => Ok(()),
+        }
+    }
+}
+
+/// General information about a PASETO/PASERK version
+pub trait Version: Default {
+    /// Header for PASETO
+    const PASETO_HEADER: &'static str;
+    /// Header for PASERK
+    const PASERK_HEADER: &'static str;
+}
+
+/// General information about a PASETO/PASERK version
+pub trait PublicVersion: Version {
+    /// Size of the asymmetric public key
+    type Public: ArrayLength<u8>;
+    /// Size of the asymmetric secret key
+    type Secret: ArrayLength<u8>;
+
+    type Signature: ArrayLength<u8>;
+    type SigningKey: signature::Signer<GenericArray<u8, Self::Signature>>;
+    type VerifyingKey: signature::Verifier<GenericArray<u8, Self::Signature>>;
+
+    fn signing_key(key: GenericArray<u8, Self::Secret>) -> Self::SigningKey;
+    fn verifying_key(key: GenericArray<u8, Self::Public>) -> Self::VerifyingKey;
+}
+
+#[cfg(feature = "v3")]
+impl Version for V3 {
+    const PASETO_HEADER: &'static str = "v3";
+    const PASERK_HEADER: &'static str = "k3";
+}
+
+#[cfg(feature = "v4")]
+impl Version for V4 {
+    const PASETO_HEADER: &'static str = "v4";
+    const PASERK_HEADER: &'static str = "k4";
+}
+
+#[cfg(feature = "v4")]
+mod v4 {
+    use chacha20::XChaCha20;
+    use cipher::KeyIvInit;
+    use generic_array::{
+        sequence::Split,
+        typenum::{IsLessOrEqual, LeEq, NonZero, U32, U56, U64},
+        ArrayLength, GenericArray,
+    };
+
+    use crate::local::{GenericCipher, GenericMac, LocalVersion};
+    use crate::{PublicVersion, V4};
+
+    pub struct Hash;
+    pub struct Cipher;
+
+    impl<O> GenericMac<O> for Hash
+    where
+        O: ArrayLength<u8> + IsLessOrEqual<U64>,
+        LeEq<O, U64>: NonZero,
+    {
+        type Mac = blake2::Blake2bMac<O>;
+    }
+
+    impl GenericCipher for Cipher {
+        type KeyIvPair = U56;
+
+        type Stream = XChaCha20;
+
+        fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream {
+            let (key, iv) = pair.split();
+            XChaCha20::new(&key, &iv)
+        }
+    }
+
+    impl LocalVersion for V4 {
+        type Local = U32;
+
+        type AuthKeySize = U32;
+        type TagSize = U32;
+        type Cipher = Cipher;
+        type Mac = Hash;
+    }
+
+    pub struct SigningKey(ed25519_dalek::SigningKey);
+    pub struct VerifyingKey(ed25519_dalek::VerifyingKey);
+
+    impl signature::Signer<GenericArray<u8, U64>> for SigningKey {
+        fn try_sign(&self, msg: &[u8]) -> Result<GenericArray<u8, U64>, signature::Error> {
+            self.0.try_sign(msg).map(|x| x.to_bytes().into())
+        }
+    }
+    impl signature::Verifier<GenericArray<u8, U64>> for VerifyingKey {
+        fn verify(
+            &self,
+            msg: &[u8],
+            signature: &GenericArray<u8, U64>,
+        ) -> Result<(), signature::Error> {
+            let sig = ed25519_dalek::Signature::from_bytes(&(*signature).into());
+            self.0.verify(msg, &sig)
+        }
+    }
+
+    impl PublicVersion for V4 {
+        /// Compressed edwards y point
+        type Public = U32;
+        /// Ed25519 scalar key, concatenated with the public key bytes
+        type Secret = U64;
+
+        type Signature = U64;
+        type SigningKey = SigningKey;
+        type VerifyingKey = VerifyingKey;
+
+        fn signing_key(key: GenericArray<u8, Self::Secret>) -> Self::SigningKey {
+            let (sk, _pk): (GenericArray<u8, U32>, _) = key.split();
+            SigningKey(ed25519_dalek::SigningKey::from_bytes(&sk.into()))
+        }
+        fn verifying_key(key: GenericArray<u8, Self::Public>) -> Self::VerifyingKey {
+            VerifyingKey(
+                ed25519_dalek::VerifyingKey::from_bytes(&key.into())
+                    .expect("validity of this public key should already be asserted"),
+            )
+        }
+    }
+}
+
+#[cfg(feature = "v3")]
+mod v3 {
+    use cipher::KeyIvInit;
+    use generic_array::{
+        sequence::Split,
+        typenum::{U32, U48, U49, U96},
+        GenericArray,
+    };
+
+    use crate::local::{GenericCipher, GenericMac, LocalVersion};
+    use crate::{PublicVersion, V3};
+
+    pub struct Hash;
+    pub struct Cipher;
+
+    impl GenericMac<U48> for Hash {
+        type Mac = hmac::Hmac<sha2::Sha384>;
+    }
+
+    impl GenericCipher for Cipher {
+        type KeyIvPair = U48;
+
+        type Stream = ctr::Ctr64BE<aes::Aes256>;
+
+        fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream {
+            let (key, iv) = pair.split();
+            Self::Stream::new(&key, &iv)
+        }
+    }
+
+    impl LocalVersion for V3 {
+        type Local = U32;
+
+        type AuthKeySize = U48;
+        type TagSize = U48;
+        type Cipher = Cipher;
+        type Mac = Hash;
+    }
+
+    pub struct SigningKey(p384::ecdsa::SigningKey);
+    pub struct VerifyingKey(p384::ecdsa::VerifyingKey);
+
+    impl signature::Signer<GenericArray<u8, U96>> for SigningKey {
+        fn try_sign(&self, msg: &[u8]) -> Result<GenericArray<u8, U96>, signature::Error> {
+            self.0
+                .try_sign(msg)
+                .map(|x: p384::ecdsa::Signature| x.to_bytes())
+        }
+    }
+    impl signature::Verifier<GenericArray<u8, U96>> for VerifyingKey {
+        fn verify(
+            &self,
+            msg: &[u8],
+            signature: &GenericArray<u8, U96>,
+        ) -> Result<(), signature::Error> {
+            let sig = p384::ecdsa::Signature::from_bytes(signature)?;
+            self.0.verify(msg, &sig)
+        }
+    }
+
+    impl PublicVersion for V3 {
+        /// P-384 Public Key in compressed format
+        type Public = U49;
+        /// P-384 Secret Key (384 bits = 48 bytes)
+        type Secret = U48;
+
+        type Signature = U96;
+        type SigningKey = SigningKey;
+        type VerifyingKey = VerifyingKey;
+
+        fn signing_key(key: GenericArray<u8, Self::Secret>) -> Self::SigningKey {
+            SigningKey(
+                p384::ecdsa::SigningKey::from_bytes(&key)
+                    .expect("secret key validity should already be asserted"),
+            )
+        }
+        fn verifying_key(key: GenericArray<u8, Self::Public>) -> Self::VerifyingKey {
+            VerifyingKey(
+                p384::ecdsa::VerifyingKey::from_sec1_bytes(&key)
+                    .expect("secret key validity should already be asserted"),
+            )
+        }
+    }
+}
+
+pub struct UnsecuredToken<V, T, M, F = (), E = JsonEncoding> {
+    version_header: V,
+    token_type: T,
+    message: M,
+    footer: F,
+    encoding: E,
+}
+
+impl TokenType for Public {
+    const TOKEN_TYPE: &'static str = "public";
+}
+
+#[cfg(feature = "v4")]
+impl<M> UnsecuredToken<V4, Public, M> {
+    pub fn new_v4_public(message: M) -> Self {
+        Self {
+            version_header: V4,
+            token_type: Public,
+            message,
+            footer: (),
+            encoding: JsonEncoding,
+        }
+    }
+}
+#[cfg(feature = "v3")]
+impl<M> UnsecuredToken<V3, Public, M> {
+    pub fn new_v3_public(message: M) -> Self {
+        Self {
+            version_header: V3,
+            token_type: Public,
+            message,
+            footer: (),
+            encoding: JsonEncoding,
+        }
+    }
+}
+
+impl<V, T, M, E> UnsecuredToken<V, T, M, (), E> {
+    pub fn with_footer<F>(self, footer: F) -> UnsecuredToken<V, T, M, F, E> {
+        UnsecuredToken {
+            version_header: self.version_header,
+            token_type: self.token_type,
+            message: self.message,
+            footer,
+            encoding: self.encoding,
+        }
+    }
+}
+
+impl<V, T, M, F> UnsecuredToken<V, T, M, F, JsonEncoding> {
+    pub fn with_encoding<E>(self, encoding: E) -> UnsecuredToken<V, T, M, F, E> {
+        UnsecuredToken {
+            version_header: self.version_header,
+            token_type: self.token_type,
+            message: self.message,
+            footer: self.footer,
+            encoding,
+        }
+    }
+}
+
+pub struct SecuredToken<V, T, F = (), E = JsonEncoding> {
+    version_header: V,
+    token_type: T,
+    message: Vec<u8>,
+    encoded_footer: Vec<u8>,
+    footer: F,
+    encoding: E,
+}
+
+pub type SymmetricKey<V> = Key<V, local::Local>;
+pub type PublicKey<V> = Key<V, Public>;
+pub type SecretKey<V> = Key<V, Secret>;
+
+pub type UnencryptedToken<V, M, F, E> = UnsecuredToken<V, local::Local, M, F, E>;
+pub type EncryptedToken<V, F, E> = SecuredToken<V, local::Local, F, E>;
+pub type UnsignedToken<V, M, F, E> = UnsecuredToken<V, Public, M, F, E>;
+pub type SignedToken<V, F, E> = SecuredToken<V, Public, F, E>;
+
+impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredToken<V, T, F, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(V::PASETO_HEADER)?;
+        f.write_str(E::SUFFIX)?;
+        f.write_str(".")?;
+        f.write_str(T::TOKEN_TYPE)?;
+        f.write_str(".")?;
+        f.write_str(&base64ct::Base64UrlUnpadded::encode_string(&self.message))?;
+        f.write_str(".")?;
+        f.write_str(&base64ct::Base64UrlUnpadded::encode_string(
+            &self.encoded_footer,
+        ))?;
+        Ok(())
+    }
+}
+
+// impl<V: LocalVersion, F: Footer, E: MessageEncoding> SecuredToken<V, Local, F, E> {}
+
+// /// Internally used traits for encryption version configuration
+// pub mod internal {
+//     pub use crate::pbkw::{PwType, PwVersion, PwWrapType};
+//     pub use crate::pke::SealedVersion;
+//     pub use crate::wrap::{PieVersion, PieWrapType, WrapType};
+// }
+
+pub enum PasetoError {
+    Base64DecodeError,
+    InvalidKey,
 }
 
 fn write_b64<W: std::fmt::Write>(b: &[u8], w: &mut W) -> std::fmt::Result {
@@ -211,30 +571,21 @@ fn read_b64<L: GenericSequence<u8> + DerefMut<Target = [u8]> + Default>(
 ) -> Result<L, PasetoError> {
     let expected_len = (s.len() + 3) / 4 * 3;
     if expected_len < <L::Length as Unsigned>::USIZE {
-        return Err(PasetoError::PayloadBase64Decode {
-            source: base64::DecodeError::InvalidLength,
-        });
+        return Err(PasetoError::Base64DecodeError);
     }
 
     let mut total = L::default();
 
     let len = base64ct::Base64UrlUnpadded::decode(s, &mut total)
-        .map_err(|_| PasetoError::PayloadBase64Decode {
-            source: base64::DecodeError::InvalidLength,
-        })?
+        .map_err(|_| PasetoError::Base64DecodeError)?
         .len();
 
     if len != <L::Length as Unsigned>::USIZE {
-        return Err(PasetoError::PayloadBase64Decode {
-            source: base64::DecodeError::InvalidLength,
-        });
+        return Err(PasetoError::Base64DecodeError);
     }
 
     Ok(total)
 }
-
-/// Whether the key serialization is safe to be added to a PASETO footer.
-pub trait SafeForFooter {}
 
 #[cfg(any(test, fuzzing))]
 pub mod fuzzing {
@@ -288,10 +639,10 @@ pub mod fuzzing {
     // not really
     impl<const N: usize> CryptoRng for FakeRng<N> {}
 
-    pub mod seal {
-        pub use crate::pke::fuzz_tests::{V3SealInput, V4SealInput};
-    }
-    pub mod wrap {
-        pub use crate::wrap::fuzz_tests::FuzzInput;
-    }
+    // pub mod seal {
+    //     pub use crate::pke::fuzz_tests::{V3SealInput, V4SealInput};
+    // }
+    // pub mod wrap {
+    //     pub use crate::wrap::fuzz_tests::FuzzInput;
+    // }
 }
