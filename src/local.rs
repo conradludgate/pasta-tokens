@@ -80,28 +80,20 @@ fn generic_digest<V: LocalEncryption>(
     footer: &[u8],
     implicit: &[u8],
 ) -> Bytes<V::TagSize> {
-    <<V::Mac as GenericMac<V::TagSize>>::Mac as digest::Mac>::new_from_slice(auth_key)
-        .expect("ak should be a valid mac key")
-        // [h, n, c, f, i].len()
-        .chain_update(5_u64.to_le_bytes())
-        // h
-        .chain_update(((V::PASETO_HEADER.len() + encoding_header.len()) as u64).to_le_bytes())
-        .chain_update(V::PASETO_HEADER)
-        .chain_update(encoding_header)
-        // n
-        .chain_update((nonce.len() as u64).to_le_bytes())
-        .chain_update(nonce)
-        // c
-        .chain_update((ciphertext.len() as u64).to_le_bytes())
-        .chain_update(ciphertext)
-        // f
-        .chain_update((footer.len() as u64).to_le_bytes())
-        .chain_update(footer)
-        // i
-        .chain_update((implicit.len() as u64).to_le_bytes())
-        .chain_update(implicit)
-        .finalize()
-        .into_bytes()
+    let mut mac =
+        <<V::Mac as GenericMac<V::TagSize>>::Mac as digest::Mac>::new_from_slice(auth_key)
+            .expect("ak should be a valid mac key");
+    crate::pae::mac(
+        [
+            [V::PASETO_HEADER.as_bytes(), encoding_header],
+            [nonce, b""],
+            [ciphertext, b""],
+            [footer, b""],
+            [implicit, b""],
+        ],
+        &mut mac,
+    );
+    mac.finalize().into_bytes()
 }
 
 fn generic_encrypt<V: LocalEncryption, R: rand::Rng + rand::CryptoRng>(

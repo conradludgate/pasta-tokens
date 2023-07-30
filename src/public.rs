@@ -1,11 +1,10 @@
 use cipher::Unsigned;
-use digest::Digest;
 use generic_array::ArrayLength;
 use signature::{DigestSigner, DigestVerifier};
 
 use crate::{
     Bytes, Footer, KeyType, Message, MessageEncoding, PayloadEncoding, PublicKey, SecretKey,
-    SignedToken, TokenType, UnsignedToken, Version,
+    SignedToken, TokenType, VerifiedToken, Version,
 };
 
 /// General information about a PASETO/PASERK version
@@ -148,7 +147,7 @@ mod v4 {
         }
     }
 
-    impl<M> crate::UnsignedToken<V4, M> {
+    impl<M> crate::VerifiedToken<V4, M> {
         pub fn new_v4_public(message: M) -> Self {
             Self {
                 version_header: V4,
@@ -241,7 +240,7 @@ mod v3 {
         }
     }
 
-    impl<M> crate::UnsignedToken<V3, M> {
+    impl<M> crate::VerifiedToken<V3, M> {
         pub fn new_v3_public(message: M) -> Self {
             Self {
                 version_header: V3,
@@ -260,22 +259,17 @@ fn generic_digest<V: Inner>(
     footer: &[u8],
     implicit: &[u8],
 ) -> V::SignatureDigest {
-    <V::SignatureDigest as digest::Digest>::new()
-        // [h, m, f, i].len()
-        .chain_update(4_u64.to_le_bytes())
-        // h
-        .chain_update(((V::PASETO_HEADER.len() + encoding_header.len()) as u64).to_le_bytes())
-        .chain_update(V::PASETO_HEADER)
-        .chain_update(encoding_header)
-        // m
-        .chain_update((message.len() as u64).to_le_bytes())
-        .chain_update(message)
-        // f
-        .chain_update((footer.len() as u64).to_le_bytes())
-        .chain_update(footer)
-        // i
-        .chain_update((implicit.len() as u64).to_le_bytes())
-        .chain_update(implicit)
+    let mut digest = <V::SignatureDigest as digest::Digest>::new();
+    crate::pae::digest(
+        [
+            [V::PASETO_HEADER.as_bytes(), encoding_header],
+            [message, b""],
+            [footer, b""],
+            [implicit, b""],
+        ],
+        &mut digest,
+    );
+    digest
 }
 
 fn generic_sign<V: Inner>(
@@ -307,7 +301,7 @@ fn generic_verify<V: Inner>(
     )
 }
 
-impl<V: PublicVersion, M: Message, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, F, E> {
+impl<V: PublicVersion, M: Message, F: Footer, E: MessageEncoding<M>> VerifiedToken<V, M, F, E> {
     pub fn sign(
         self,
         key: &SecretKey<V>,
@@ -334,7 +328,7 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
         self,
         key: &PublicKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<UnsignedToken<V, M, F, E>, Box<dyn std::error::Error>>
+    ) -> Result<VerifiedToken<V, M, F, E>, Box<dyn std::error::Error>>
     where
         E: MessageEncoding<M>,
     {
@@ -353,7 +347,7 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
 
         let message = self.encoding.decode(m)?;
 
-        Ok(UnsignedToken {
+        Ok(VerifiedToken {
             version_header: self.version_header,
             token_type: self.token_type,
             message,

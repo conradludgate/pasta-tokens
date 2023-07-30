@@ -181,19 +181,12 @@ mod base64ct2;
 mod key;
 pub mod local;
 pub mod public;
+mod pae;
 
 /// General information about token types
 pub trait TokenType: Default {
     /// "local" or "public"
     const TOKEN_TYPE: &'static str;
-}
-
-fn pae(pieces: &[&str], out: &mut Vec<u8>) {
-    out.extend_from_slice(&(pieces.len() as u64).to_le_bytes());
-    for piece in pieces {
-        out.extend_from_slice(&(piece.len() as u64).to_le_bytes());
-        out.extend_from_slice(piece.as_bytes());
-    }
 }
 
 pub trait PayloadEncoding {
@@ -321,7 +314,7 @@ pub type SecretKey<V> = Key<V, public::Secret>;
 pub type UnencryptedToken<V, M, F = (), E = JsonEncoding> =
     UnsecuredToken<V, local::Local, M, F, E>;
 pub type EncryptedToken<V, F = (), E = JsonEncoding> = SecuredToken<V, local::Local, F, E>;
-pub type UnsignedToken<V, M, F = (), E = JsonEncoding> = UnsecuredToken<V, public::Public, M, F, E>;
+pub type VerifiedToken<V, M, F = (), E = JsonEncoding> = UnsecuredToken<V, public::Public, M, F, E>;
 pub type SignedToken<V, F = (), E = JsonEncoding> = SecuredToken<V, public::Public, F, E>;
 
 impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredToken<V, T, F, E> {
