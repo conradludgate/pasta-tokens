@@ -243,8 +243,18 @@ impl Footer for () {
     }
 }
 
+mod sealed {
+    pub trait Sealed {}
+
+    #[cfg(feature = "v3")]
+    impl Sealed for crate::V3 {}
+
+    #[cfg(feature = "v4")]
+    impl Sealed for crate::V4 {}
+}
+
 /// General information about a PASETO/PASERK version
-pub trait Version: Default {
+pub trait Version: Default + sealed::Sealed {
     /// Header for PASETO
     const PASETO_HEADER: &'static str;
     /// Header for PASERK

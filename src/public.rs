@@ -11,39 +11,39 @@ use crate::{
 /// General information about a PASETO/PASERK version
 pub trait PublicVersion: Version {
     /// Size of the asymmetric public key
-    type Public: ArrayLength<u8>;
+    type PublicKeySize: ArrayLength<u8>;
     /// Size of the asymmetric secret key
-    type Secret: ArrayLength<u8>;
+    type SecretKeySize: ArrayLength<u8>;
 
     type Signature: ArrayLength<u8>;
-    type SigningKey: signature::DigestSigner<Self::SignatureDigest, Bytes<Self::Signature>>;
-    type VerifyingKey: signature::DigestVerifier<Self::SignatureDigest, Bytes<Self::Signature>>;
-    type SignatureDigest: digest::Digest;
-
-    fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey;
-    fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey;
 
     #[doc(hidden)]
     fn sign(
-        k: &Bytes<Self::Secret>,
+        k: &Bytes<Self::SecretKeySize>,
         h: &[u8],
         m: &[u8],
         f: &[u8],
         i: &[u8],
-    ) -> Bytes<Self::Signature> {
-        generic_sign::<Self>(k, h, m, f, i)
-    }
+    ) -> Bytes<Self::Signature>;
 
+    #[doc(hidden)]
     fn verify(
-        k: &Bytes<Self::Public>,
+        k: &Bytes<Self::PublicKeySize>,
         h: &[u8],
         m: &[u8],
         f: &[u8],
         i: &[u8],
         sig: &Bytes<Self::Signature>,
-    ) -> Result<(), signature::Error> {
-        generic_verify::<Self>(k, h, m, f, i, sig)
-    }
+    ) -> Result<(), signature::Error>;
+}
+
+trait Inner: PublicVersion {
+    type SigningKey: signature::DigestSigner<Self::SignatureDigest, Bytes<Self::Signature>>;
+    type VerifyingKey: signature::DigestVerifier<Self::SignatureDigest, Bytes<Self::Signature>>;
+    type SignatureDigest: digest::Digest;
+
+    fn signing_key(key: &Bytes<Self::SecretKeySize>) -> Self::SigningKey;
+    fn verifying_key(key: &Bytes<Self::PublicKeySize>) -> Self::VerifyingKey;
 }
 
 /// Public verifying/encrypting keys
@@ -55,13 +55,13 @@ pub struct Public;
 pub struct Secret;
 
 impl<V: PublicVersion> KeyType<V> for Public {
-    type KeyLen = V::Public;
+    type KeyLen = V::PublicKeySize;
     const HEADER: &'static str = "public.";
     const ID: &'static str = "pid.";
 }
 
 impl<V: PublicVersion> KeyType<V> for Secret {
-    type KeyLen = V::Secret;
+    type KeyLen = V::SecretKeySize;
     const HEADER: &'static str = "secret.";
     const ID: &'static str = "sid.";
 }
@@ -71,11 +71,11 @@ impl TokenType for Public {
 }
 
 #[cfg(feature = "v4")]
-pub mod v4 {
+mod v4 {
     use generic_array::sequence::Split;
     use generic_array::typenum::{U32, U64};
 
-    use super::PublicVersion;
+    use super::{Inner, PublicVersion};
     use crate::Bytes;
     use crate::V4;
 
@@ -103,28 +103,14 @@ pub mod v4 {
 
     impl PublicVersion for V4 {
         /// Compressed edwards y point
-        type Public = U32;
+        type PublicKeySize = U32;
         /// Ed25519 scalar key, concatenated with the public key bytes
-        type Secret = U64;
+        type SecretKeySize = U64;
 
         type Signature = U64;
-        type SigningKey = SigningKey;
-        type VerifyingKey = VerifyingKey;
-        type SignatureDigest = SignatureDigest;
-
-        fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey {
-            let (sk, _pk): (Bytes<U32>, _) = (*key).split();
-            SigningKey(ed25519_dalek::SigningKey::from_bytes(&sk.into()))
-        }
-        fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey {
-            VerifyingKey(
-                ed25519_dalek::VerifyingKey::from_bytes(&(*key).into())
-                    .expect("validity of this public key should already be asserted"),
-            )
-        }
 
         fn sign(
-            k: &Bytes<Self::Secret>,
+            k: &Bytes<Self::SecretKeySize>,
             h: &[u8],
             m: &[u8],
             f: &[u8],
@@ -134,7 +120,7 @@ pub mod v4 {
         }
 
         fn verify(
-            k: &Bytes<Self::Public>,
+            k: &Bytes<Self::PublicKeySize>,
             h: &[u8],
             m: &[u8],
             f: &[u8],
@@ -142,6 +128,23 @@ pub mod v4 {
             sig: &Bytes<Self::Signature>,
         ) -> Result<(), signature::Error> {
             super::generic_verify::<Self>(k, h, m, f, i, sig)
+        }
+    }
+
+    impl Inner for V4 {
+        type SigningKey = SigningKey;
+        type VerifyingKey = VerifyingKey;
+        type SignatureDigest = SignatureDigest;
+
+        fn signing_key(key: &Bytes<Self::SecretKeySize>) -> Self::SigningKey {
+            let (sk, _pk): (Bytes<U32>, _) = (*key).split();
+            SigningKey(ed25519_dalek::SigningKey::from_bytes(&sk.into()))
+        }
+        fn verifying_key(key: &Bytes<Self::PublicKeySize>) -> Self::VerifyingKey {
+            VerifyingKey(
+                ed25519_dalek::VerifyingKey::from_bytes(&(*key).into())
+                    .expect("validity of this public key should already be asserted"),
+            )
         }
     }
 
@@ -162,6 +165,7 @@ pub mod v4 {
 mod v3 {
     use generic_array::typenum::{U48, U49, U96};
 
+    use super::Inner;
     use super::PublicVersion;
     use crate::Bytes;
     use crate::V3;
@@ -190,30 +194,14 @@ mod v3 {
 
     impl PublicVersion for V3 {
         /// P-384 Public Key in compressed format
-        type Public = U49;
+        type PublicKeySize = U49;
         /// P-384 Secret Key (384 bits = 48 bytes)
-        type Secret = U48;
+        type SecretKeySize = U48;
 
         type Signature = U96;
-        type SigningKey = SigningKey;
-        type VerifyingKey = VerifyingKey;
-        type SignatureDigest = SignatureDigest;
-
-        fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey {
-            SigningKey(
-                p384::ecdsa::SigningKey::from_bytes(key)
-                    .expect("secret key validity should already be asserted"),
-            )
-        }
-        fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey {
-            VerifyingKey(
-                p384::ecdsa::VerifyingKey::from_sec1_bytes(key)
-                    .expect("secret key validity should already be asserted"),
-            )
-        }
 
         fn sign(
-            k: &Bytes<Self::Secret>,
+            k: &Bytes<Self::SecretKeySize>,
             h: &[u8],
             m: &[u8],
             f: &[u8],
@@ -223,7 +211,7 @@ mod v3 {
         }
 
         fn verify(
-            k: &Bytes<Self::Public>,
+            k: &Bytes<Self::PublicKeySize>,
             h: &[u8],
             m: &[u8],
             f: &[u8],
@@ -231,6 +219,25 @@ mod v3 {
             sig: &Bytes<Self::Signature>,
         ) -> Result<(), signature::Error> {
             super::generic_verify::<Self>(k, h, m, f, i, sig)
+        }
+    }
+
+    impl Inner for V3 {
+        type SigningKey = SigningKey;
+        type VerifyingKey = VerifyingKey;
+        type SignatureDigest = SignatureDigest;
+
+        fn signing_key(key: &Bytes<Self::SecretKeySize>) -> Self::SigningKey {
+            SigningKey(
+                p384::ecdsa::SigningKey::from_bytes(key)
+                    .expect("secret key validity should already be asserted"),
+            )
+        }
+        fn verifying_key(key: &Bytes<Self::PublicKeySize>) -> Self::VerifyingKey {
+            VerifyingKey(
+                p384::ecdsa::VerifyingKey::from_sec1_bytes(key)
+                    .expect("secret key validity should already be asserted"),
+            )
         }
     }
 
@@ -247,7 +254,7 @@ mod v3 {
     }
 }
 
-fn generic_digest<V: PublicVersion>(
+fn generic_digest<V: Inner>(
     encoding_header: &[u8],
     message: &[u8],
     footer: &[u8],
@@ -271,8 +278,8 @@ fn generic_digest<V: PublicVersion>(
         .chain_update(implicit)
 }
 
-fn generic_sign<V: PublicVersion>(
-    key: &Bytes<V::Secret>,
+fn generic_sign<V: Inner>(
+    key: &Bytes<V::SecretKeySize>,
     encoding_header: &[u8],
     message: &[u8],
     footer: &[u8],
@@ -286,8 +293,8 @@ fn generic_sign<V: PublicVersion>(
     ))
 }
 
-fn generic_verify<V: PublicVersion>(
-    key: &Bytes<V::Public>,
+fn generic_verify<V: Inner>(
+    key: &Bytes<V::PublicKeySize>,
     encoding_header: &[u8],
     message: &[u8],
     footer: &[u8],

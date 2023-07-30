@@ -17,61 +17,54 @@ impl TokenType for Local {
 }
 
 impl<V: LocalVersion> KeyType<V> for Local {
-    type KeyLen = V::Local;
+    type KeyLen = V::KeySize;
     const HEADER: &'static str = "local.";
     const ID: &'static str = "lid.";
 }
 
 /// General information about a PASETO/PASERK version
-pub trait LocalVersion: Version {
-    /// Size of the symmetric local key
-    type Local: ArrayLength<u8>;
-
+trait LocalEncryption: LocalVersion {
     type AuthKeySize: ArrayLength<u8>;
-    type TagSize: ArrayLength<u8>;
     type Cipher: GenericCipher;
     type Mac: GenericMac<Self::AuthKeySize>
         + GenericMac<Self::TagSize>
         + GenericMac<<Self::Cipher as GenericCipher>::KeyIvPair>;
+}
+
+/// General information about a PASETO/PASERK version
+pub trait LocalVersion: Version {
+    /// Size of the symmetric local key
+    type KeySize: ArrayLength<u8>;
+
+    type TagSize: ArrayLength<u8>;
 
     #[doc(hidden)]
     fn encrypt(
-        key: &Bytes<Self::Local>,
+        key: &Bytes<Self::KeySize>,
         encoding_header: &[u8],
         message: &mut [u8],
         footer: &[u8],
         implicit: &[u8],
-    ) -> ([u8; NONCE_LEN], Bytes<Self::TagSize>) {
-        generic_encrypt::<Self, _>(
-            key,
-            encoding_header,
-            message,
-            footer,
-            implicit,
-            &mut rand::thread_rng(),
-        )
-    }
+    ) -> ([u8; NONCE_LEN], Bytes<Self::TagSize>);
 
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments, clippy::result_unit_err)]
     fn decrypt(
-        key: &Bytes<Self::Local>,
+        key: &Bytes<Self::KeySize>,
         encoding_header: &[u8],
         nonce: &[u8],
         message: &mut [u8],
         tag: &[u8],
         footer: &[u8],
         implicit: &[u8],
-    ) -> Result<(), ()> {
-        generic_decrypt::<Self>(key, encoding_header, nonce, message, tag, footer, implicit)
-    }
+    ) -> Result<(), ()>;
 }
 
-pub trait GenericMac<OutputSize: ArrayLength<u8>> {
+trait GenericMac<OutputSize: ArrayLength<u8>> {
     type Mac: digest::Mac<OutputSize = OutputSize> + KeyInit;
 }
 
-pub trait GenericCipher {
+trait GenericCipher {
     type KeyIvPair: ArrayLength<u8>;
     type Stream: cipher::StreamCipher;
     fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream;
@@ -79,7 +72,7 @@ pub trait GenericCipher {
 
 const NONCE_LEN: usize = 32;
 
-fn generic_digest<V: LocalVersion>(
+fn generic_digest<V: LocalEncryption>(
     auth_key: &Bytes<V::AuthKeySize>,
     encoding_header: &[u8],
     nonce: &[u8],
@@ -111,8 +104,8 @@ fn generic_digest<V: LocalVersion>(
         .into_bytes()
 }
 
-fn generic_encrypt<V: LocalVersion, R: rand::Rng + rand::CryptoRng>(
-    key: &Bytes<V::Local>,
+fn generic_encrypt<V: LocalEncryption, R: rand::Rng + rand::CryptoRng>(
+    key: &Bytes<V::KeySize>,
     encoding_header: &[u8],
     message: &mut [u8],
     footer: &[u8],
@@ -142,8 +135,8 @@ fn generic_encrypt<V: LocalVersion, R: rand::Rng + rand::CryptoRng>(
     (nonce, tag)
 }
 
-fn generic_decrypt<V: LocalVersion>(
-    key: &Bytes<V::Local>,
+fn generic_decrypt<V: LocalEncryption>(
+    key: &Bytes<V::KeySize>,
     encoding_header: &[u8],
     nonce: &[u8],
     message: &mut [u8],
@@ -186,7 +179,8 @@ mod v3 {
     use crate::{Bytes, Message, UnencryptedToken, V3};
 
     use super::{
-        generic_decrypt, generic_encrypt, GenericCipher, GenericMac, LocalVersion, NONCE_LEN,
+        generic_decrypt, generic_encrypt, GenericCipher, GenericMac, LocalEncryption, LocalVersion,
+        NONCE_LEN,
     };
 
     pub struct Hash;
@@ -208,15 +202,12 @@ mod v3 {
     }
 
     impl LocalVersion for V3 {
-        type Local = U32;
+        type KeySize = U32;
 
-        type AuthKeySize = U48;
         type TagSize = U48;
-        type Cipher = Cipher;
-        type Mac = Hash;
 
         fn encrypt(
-            k: &Bytes<Self::Local>,
+            k: &Bytes<Self::KeySize>,
             e: &[u8],
             m: &mut [u8],
             f: &[u8],
@@ -226,7 +217,7 @@ mod v3 {
         }
 
         fn decrypt(
-            k: &Bytes<Self::Local>,
+            k: &Bytes<Self::KeySize>,
             h: &[u8],
             n: &[u8],
             m: &mut [u8],
@@ -236,6 +227,12 @@ mod v3 {
         ) -> Result<(), ()> {
             generic_decrypt::<Self>(k, h, n, m, t, f, i)
         }
+    }
+
+    impl LocalEncryption for V3 {
+        type AuthKeySize = U48;
+        type Cipher = Cipher;
+        type Mac = Hash;
     }
 
     impl<M: Message> UnencryptedToken<crate::V3, M> {
@@ -252,7 +249,7 @@ mod v3 {
 }
 
 #[cfg(feature = "v4")]
-pub mod v4 {
+mod v4 {
     use chacha20::XChaCha20;
     use cipher::KeyIvInit;
     use generic_array::{
@@ -262,7 +259,8 @@ pub mod v4 {
     };
 
     use super::{
-        generic_decrypt, generic_encrypt, GenericCipher, GenericMac, LocalVersion, NONCE_LEN,
+        generic_decrypt, generic_encrypt, GenericCipher, GenericMac, LocalEncryption, LocalVersion,
+        NONCE_LEN,
     };
     use crate::{Bytes, Message, UnencryptedToken, V4};
 
@@ -289,15 +287,12 @@ pub mod v4 {
     }
 
     impl LocalVersion for V4 {
-        type Local = U32;
+        type KeySize = U32;
 
-        type AuthKeySize = U32;
         type TagSize = U32;
-        type Cipher = Cipher;
-        type Mac = Hash;
 
         fn encrypt(
-            k: &Bytes<Self::Local>,
+            k: &Bytes<Self::KeySize>,
             e: &[u8],
             m: &mut [u8],
             f: &[u8],
@@ -307,7 +302,7 @@ pub mod v4 {
         }
 
         fn decrypt(
-            k: &Bytes<Self::Local>,
+            k: &Bytes<Self::KeySize>,
             h: &[u8],
             n: &[u8],
             m: &mut [u8],
@@ -317,6 +312,12 @@ pub mod v4 {
         ) -> Result<(), ()> {
             generic_decrypt::<Self>(k, h, n, m, t, f, i)
         }
+    }
+
+    impl LocalEncryption for V4 {
+        type AuthKeySize = U32;
+        type Cipher = Cipher;
+        type Mac = Hash;
     }
 
     impl<M: Message> UnencryptedToken<V4, M> {

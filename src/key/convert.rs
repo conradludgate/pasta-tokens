@@ -194,7 +194,7 @@ impl<V: LocalVersion> SymmetricKey<V> {
 
     /// Generate a random local key using the provided random source
     pub fn new_random(rng: &mut (impl RngCore + CryptoRng)) -> Self {
-        let mut key = GenericArray::<u8, V::Local>::default();
+        let mut key = GenericArray::<u8, V::KeySize>::default();
         rng.fill_bytes(&mut key);
         Self { key }
     }
