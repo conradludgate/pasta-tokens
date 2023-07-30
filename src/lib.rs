@@ -27,27 +27,35 @@ use base64ct::Encoding;
 
 pub use key::{Key, KeyType};
 
-#[cfg(feature = "local")]
-pub use local::Local;
-#[cfg(feature = "public")]
-pub use public::{Public, Secret};
+/// Purpose of the PASETO. Supports either `local` or
+pub mod purpose {
+    #[cfg(feature = "local")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "local")))]
+    pub mod local;
+    #[cfg(feature = "public")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "public")))]
+    pub mod public;
 
+    #[cfg(feature = "local")]
+    pub use local::Local;
+    #[cfg(feature = "public")]
+    pub use public::{Public, Secret};
+
+    /// Purpose of the PASETO.
+    ///
+    /// * `public` - signed tokens. payload included in plaintext
+    /// * `local` - encrypted tokens. payload is not readable without key
+    pub trait Purpose: Default {
+        /// "local" or "public"
+        const HEADER: &'static str;
+    }
+}
+
+use purpose::Purpose;
 use serde::{de::DeserializeOwned, Serialize};
 
 mod key;
-#[cfg(feature = "local")]
-#[cfg_attr(docsrs, doc(cfg(feature = "local")))]
-pub mod local;
 mod pae;
-#[cfg(feature = "public")]
-#[cfg_attr(docsrs, doc(cfg(feature = "public")))]
-pub mod public;
-
-/// General information about token types
-pub trait TokenType: Default {
-    /// "local" or "public"
-    const TOKEN_TYPE: &'static str;
-}
 
 /// A payload encoding protocol. Currently only supports [`Json`]
 pub trait PayloadEncoding: Default {
@@ -236,33 +244,33 @@ pub struct SecuredToken<V, T, F = (), E = Json<()>> {
 
 /// A symmetric key for `local` encrypted tokens
 #[cfg(feature = "local")]
-pub type SymmetricKey<V> = Key<V, local::Local>;
+pub type SymmetricKey<V> = Key<V, purpose::Local>;
 /// A public key for verifying `public` tokens
 #[cfg(feature = "public")]
-pub type PublicKey<V> = Key<V, public::Public>;
+pub type PublicKey<V> = Key<V, purpose::Public>;
 /// A secret key for signing `public` tokens
 #[cfg(feature = "public")]
-pub type SecretKey<V> = Key<V, public::Secret>;
+pub type SecretKey<V> = Key<V, purpose::Secret>;
 
 /// An unencrypted PASETO.
 #[cfg(feature = "local")]
-pub type UnencryptedToken<V, M, F = (), E = Json<()>> = UnsecuredToken<V, local::Local, M, F, E>;
+pub type UnencryptedToken<V, M, F = (), E = Json<()>> = UnsecuredToken<V, purpose::Local, M, F, E>;
 /// An encrypted PASETO.
 #[cfg(feature = "local")]
-pub type EncryptedToken<V, F = (), E = Json<()>> = SecuredToken<V, local::Local, F, E>;
+pub type EncryptedToken<V, F = (), E = Json<()>> = SecuredToken<V, purpose::Local, F, E>;
 /// A Verified PASETO that has either been parsed and verified, or is ready to be signed.
 #[cfg(feature = "public")]
-pub type VerifiedToken<V, M, F = (), E = Json<()>> = UnsecuredToken<V, public::Public, M, F, E>;
+pub type VerifiedToken<V, M, F = (), E = Json<()>> = UnsecuredToken<V, purpose::Public, M, F, E>;
 /// A Signed PASETO.
 #[cfg(feature = "public")]
-pub type SignedToken<V, F = (), E = Json<()>> = SecuredToken<V, public::Public, F, E>;
+pub type SignedToken<V, F = (), E = Json<()>> = SecuredToken<V, purpose::Public, F, E>;
 
-impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredToken<V, T, F, E> {
+impl<V: Version, T: Purpose, F, E: PayloadEncoding> fmt::Display for SecuredToken<V, T, F, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(V::PASETO_HEADER)?;
         f.write_str(E::SUFFIX)?;
         f.write_str(".")?;
-        f.write_str(T::TOKEN_TYPE)?;
+        f.write_str(T::HEADER)?;
         f.write_str(".")?;
         f.write_str(&base64ct::Base64UrlUnpadded::encode_string(&self.payload))?;
 
@@ -277,7 +285,7 @@ impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredTo
     }
 }
 
-impl<V: Version, T: TokenType, F: Footer, E: PayloadEncoding> std::str::FromStr
+impl<V: Version, T: Purpose, F: Footer, E: PayloadEncoding> std::str::FromStr
     for SecuredToken<V, T, F, E>
 {
     type Err = ();
@@ -286,7 +294,7 @@ impl<V: Version, T: TokenType, F: Footer, E: PayloadEncoding> std::str::FromStr
         let s = s.strip_prefix(V::PASETO_HEADER).ok_or(())?;
         let s = s.strip_prefix(E::SUFFIX).ok_or(())?;
         let s = s.strip_prefix('.').ok_or(())?;
-        let s = s.strip_prefix(T::TOKEN_TYPE).ok_or(())?;
+        let s = s.strip_prefix(T::HEADER).ok_or(())?;
         let s = s.strip_prefix('.').ok_or(())?;
 
         let (payload, footer) = match s.split_once('.') {

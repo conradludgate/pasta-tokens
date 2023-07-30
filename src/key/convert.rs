@@ -185,7 +185,7 @@ impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
 }
 
 #[cfg(feature = "local")]
-impl<V: crate::local::LocalVersion> crate::SymmetricKey<V> {
+impl<V: crate::purpose::local::LocalVersion> crate::SymmetricKey<V> {
     /// Generate a random local key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)

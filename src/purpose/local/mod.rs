@@ -12,7 +12,7 @@ use subtle::ConstantTimeEq;
 
 use crate::{
     Bytes, EncryptedToken, Footer, KeyType, MessageEncoding, PayloadEncoding, SymmetricKey,
-    TokenType, UnencryptedToken, Version,
+    Purpose, UnencryptedToken, Version,
 };
 
 /// PASETO local encryption
@@ -23,13 +23,13 @@ use crate::{
 #[derive(Debug, Default)]
 pub struct Local;
 
-impl TokenType for Local {
-    const TOKEN_TYPE: &'static str = "local";
+impl Purpose for Local {
+    const HEADER: &'static str = "local";
 }
 
 impl<V: LocalVersion> KeyType<V> for Local {
     type KeyLen = V::KeySize;
-    const HEADER: &'static str = "local.";
+    const KEY_HEADER: &'static str = "local.";
     const ID: &'static str = "lid.";
 }
 
@@ -106,7 +106,7 @@ fn generic_digest<V: LocalEncryption>(
                 V::PASETO_HEADER.as_bytes(),
                 encoding_header,
                 b".",
-                Local::TOKEN_TYPE.as_bytes(),
+                Local::HEADER.as_bytes(),
                 b".",
             ],
             &[nonce],
@@ -167,204 +167,11 @@ fn generic_decrypt<V: LocalEncryption>(
 
 #[cfg(feature = "v3-local")]
 #[cfg_attr(docsrs, doc(cfg(feature = "v3-local")))]
-mod v3 {
-    use cipher::KeyIvInit;
-    use generic_array::{
-        sequence::Split,
-        typenum::{U32, U48},
-        ArrayLength,
-    };
-
-    use crate::{Bytes, UnencryptedToken, V3};
-
-    use super::{
-        generic_decrypt, generic_encrypt, GenericCipher, GenericMac, Kdf, LocalEncryption,
-        LocalVersion,
-    };
-
-    pub struct Hash;
-    pub struct Cipher;
-
-    impl GenericMac<U48> for Hash {
-        type Mac = hmac::Hmac<sha2::Sha384>;
-    }
-
-    impl<O> Kdf<O> for Hash
-    where
-        O: ArrayLength<u8>,
-    {
-        fn mac<const N: usize>(key: &[u8], info: [&[u8]; N]) -> Bytes<O> {
-            let mut output = Bytes::<O>::default();
-            hkdf::Hkdf::<sha2::Sha384>::new(None, key)
-                .expand_multi_info(&info, &mut output)
-                .unwrap();
-            output
-        }
-    }
-
-    impl GenericCipher for Cipher {
-        type KeyIvPair = U48;
-
-        type Stream = ctr::Ctr64BE<aes::Aes256>;
-
-        fn key_iv_init(pair: Bytes<Self::KeyIvPair>) -> Self::Stream {
-            let (key, iv) = pair.split();
-            Self::Stream::new(&key, &iv)
-        }
-    }
-
-    impl LocalVersion for V3 {
-        type KeySize = U32;
-
-        type TagSize = U48;
-
-        fn encrypt(
-            k: &Bytes<Self::KeySize>,
-            e: &[u8],
-            n: &[u8],
-            m: &mut [u8],
-            f: &[u8],
-            i: &[u8],
-        ) -> Bytes<Self::TagSize> {
-            generic_encrypt::<Self>(k, e, n, m, f, i)
-        }
-
-        fn decrypt(
-            k: &Bytes<Self::KeySize>,
-            h: &[u8],
-            n: &[u8],
-            m: &mut [u8],
-            t: &[u8],
-            f: &[u8],
-            i: &[u8],
-        ) -> Result<(), ()> {
-            generic_decrypt::<Self>(k, h, n, m, t, f, i)
-        }
-    }
-
-    impl LocalEncryption for V3 {
-        type AuthKeySize = U48;
-        type Cipher = Cipher;
-        type Mac = Hash;
-    }
-
-    impl<M> UnencryptedToken<crate::V3, M> {
-        /// Create a new V3 [`EncryptedToken`](crate::EncryptedToken) builder with the given message payload
-        pub fn new_v3_local(message: M) -> Self {
-            Self {
-                version_header: crate::V3,
-                token_type: super::Local,
-                message,
-                footer: (),
-                encoding: crate::Json(()),
-            }
-        }
-    }
-}
+mod v3;
 
 #[cfg(feature = "v4-local")]
 #[cfg_attr(docsrs, doc(cfg(feature = "v4-local")))]
-mod v4 {
-    use chacha20::XChaCha20;
-    use cipher::KeyIvInit;
-    use digest::{FixedOutput, Mac};
-    use generic_array::{
-        sequence::Split,
-        typenum::{IsLessOrEqual, LeEq, NonZero, U32, U56, U64},
-        ArrayLength, GenericArray,
-    };
-
-    use super::{
-        generic_decrypt, generic_encrypt, GenericCipher, GenericMac, Kdf, LocalEncryption,
-        LocalVersion,
-    };
-    use crate::{Bytes, UnencryptedToken, V4};
-
-    pub struct Hash;
-    pub struct Cipher;
-
-    impl<O> GenericMac<O> for Hash
-    where
-        O: ArrayLength<u8> + IsLessOrEqual<U64>,
-        LeEq<O, U64>: NonZero,
-    {
-        type Mac = blake2::Blake2bMac<O>;
-    }
-
-    impl<O> Kdf<O> for Hash
-    where
-        O: ArrayLength<u8> + IsLessOrEqual<U64>,
-        LeEq<O, U64>: NonZero,
-    {
-        fn mac<const N: usize>(key: &[u8], info: [&[u8]; N]) -> Bytes<O> {
-            let mut mac =
-                blake2::Blake2bMac::<O>::new_from_slice(key).expect("key should be valid");
-            for i in info {
-                mac.update(i);
-            }
-            mac.finalize_fixed()
-        }
-    }
-
-    impl GenericCipher for Cipher {
-        type KeyIvPair = U56;
-
-        type Stream = XChaCha20;
-
-        fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream {
-            let (key, iv) = pair.split();
-            XChaCha20::new(&key, &iv)
-        }
-    }
-
-    impl LocalVersion for V4 {
-        type KeySize = U32;
-
-        type TagSize = U32;
-
-        fn encrypt(
-            k: &Bytes<Self::KeySize>,
-            e: &[u8],
-            n: &[u8],
-            m: &mut [u8],
-            f: &[u8],
-            i: &[u8],
-        ) -> Bytes<Self::TagSize> {
-            generic_encrypt::<Self>(k, e, n, m, f, i)
-        }
-
-        fn decrypt(
-            k: &Bytes<Self::KeySize>,
-            h: &[u8],
-            n: &[u8],
-            m: &mut [u8],
-            t: &[u8],
-            f: &[u8],
-            i: &[u8],
-        ) -> Result<(), ()> {
-            generic_decrypt::<Self>(k, h, n, m, t, f, i)
-        }
-    }
-
-    impl LocalEncryption for V4 {
-        type AuthKeySize = U32;
-        type Cipher = Cipher;
-        type Mac = Hash;
-    }
-
-    impl<M> UnencryptedToken<V4, M> {
-        /// Create a new V4 [`EncryptedToken`](crate::EncryptedToken) builder with the given message payload
-        pub fn new_v4_local(message: M) -> Self {
-            Self {
-                version_header: V4,
-                token_type: super::Local,
-                message,
-                footer: (),
-                encoding: crate::Json(()),
-            }
-        }
-    }
-}
+mod v4;
 
 impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M, F, E> {
     fn encrypt_inner(

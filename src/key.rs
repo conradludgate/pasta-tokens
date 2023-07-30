@@ -9,7 +9,7 @@ pub trait KeyType<V: Version> {
     /// Chooses the correct length from the version
     type KeyLen: ArrayLength<u8>;
     /// Header for this key type
-    const HEADER: &'static str;
+    const KEY_HEADER: &'static str;
     /// ID header for this key type
     const ID: &'static str;
 }

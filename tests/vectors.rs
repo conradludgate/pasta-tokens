@@ -2,8 +2,8 @@ use std::fs;
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use pasta_tokens::{
-    local::LocalVersion, public::PublicVersion, EncryptedToken, PublicKey, SecretKey, SignedToken,
-    SymmetricKey, V3, V4,
+    purpose::{local::LocalVersion, public::PublicVersion},
+    EncryptedToken, PublicKey, SecretKey, SignedToken, SymmetricKey, V3, V4,
 };
 // use rusty_paserk::{
 //     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
