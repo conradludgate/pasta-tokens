@@ -1,7 +1,10 @@
-use std::{fs, str::FromStr};
+use std::fs;
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use pasta_tokens::{EncryptedToken, Version, V3, V4};
+use pasta_tokens::{
+    local::LocalVersion, public::PublicVersion, AlwaysValid, EncryptedToken, PublicKey, SecretKey,
+    SignedToken, SymmetricKey, V3, V4,
+};
 // use rusty_paserk::{
 //     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
 //     Key, KeyId, KeyType, Local, PasetoError, PieWrappedKey, PlaintextKey, Public, PwWrappedKey,
@@ -13,7 +16,8 @@ use serde::{
 };
 
 fn main() {
-    let args = Arguments::from_args();
+    let mut args = Arguments::from_args();
+    args.test_threads = Some(1);
 
     let mut tests = vec![];
 
@@ -61,34 +65,96 @@ struct PasetoTest {
 impl PasetoTest {
     fn add_all_tests(tests: &mut Vec<Trial>) {
         Self::add_tests::<V3>(tests);
-        // Self::add_tests::<V4>(tests);
+        Self::add_tests::<V4>(tests);
     }
 
-    fn add_tests<V: Version>(tests: &mut Vec<Trial>) {
+    fn add_tests<V: LocalVersion + PublicVersion>(tests: &mut Vec<Trial>)
+    where
+        PublicKey<V>: ParseKey,
+        SecretKey<V>: ParseKey,
+        SymmetricKey<V>: ParseKey,
+    {
         let test_file: TestFile<Self> = read_test(&format!("{}.json", V::PASETO_HEADER));
         for test in test_file.tests {
             tests.push(Trial::test(test.name, || test.test_data.test::<V>()));
         }
     }
 
-    fn test<V: Version>(self) -> Result<(), Failed> {
+    fn test<V: LocalVersion + PublicVersion>(self) -> Result<(), Failed>
+    where
+        PublicKey<V>: ParseKey,
+        SecretKey<V>: ParseKey,
+        SymmetricKey<V>: ParseKey,
+    {
         match self {
             PasetoTest {
                 token,
                 footer,
                 implicit_assertion,
-                purpose: PasetoPurpose::Local { nonce, key },
+                purpose: PasetoPurpose::Local { key, .. },
                 result: TestResult::Failure { .. },
-            } => {}
+            } => {
+                let key = SymmetricKey::<V>::from_key(&key);
+
+                let Ok(token): Result<EncryptedToken::<V, Vec<u8>>, _> = token.parse() else { return Ok(()) };
+                assert_eq!(token.footer(), footer.as_bytes());
+
+                match token
+                    .decrypt::<AlwaysValid<serde_json::Value>>(&key, implicit_assertion.as_bytes())
+                {
+                    Ok(_) => Err("decrypting token should fail".into()),
+                    Err(_) => Ok(()),
+                }
+            }
             PasetoTest {
-                token,
+                token: token_str,
                 footer,
                 implicit_assertion,
                 purpose: PasetoPurpose::Local { nonce, key },
                 result: TestResult::Success { payload, .. },
-            } => {}
+            } => {
+                let key = SymmetricKey::<V>::from_key(&key);
+                let token: EncryptedToken<V, Vec<u8>> = token_str.parse().unwrap();
+                assert_eq!(token.footer(), footer.as_bytes());
+
+                let token = token
+                    .decrypt::<AlwaysValid<serde_json::Value>>(&key, implicit_assertion.as_bytes())
+                    .unwrap();
+
+                let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+                assert_eq!(token.message.0, payload);
+
+                let nonce = hex::decode(nonce).unwrap().try_into().unwrap();
+                let token = token
+                    .encrypt_with_nonce(&key, nonce, implicit_assertion.as_bytes())
+                    .unwrap();
+
+                assert_eq!(token.to_string(), token_str);
+
+                Ok(())
+            }
             PasetoTest {
                 token,
+                footer,
+                implicit_assertion,
+                purpose: PasetoPurpose::Public { public_key, .. },
+                result: TestResult::Failure { .. },
+            } => {
+                let public_key = PublicKey::<V>::from_key(&public_key);
+
+                let Ok(token): Result<SignedToken::<V, Vec<u8>>, _> = token.parse() else { return Ok(()) };
+                assert_eq!(token.footer(), footer.as_bytes());
+
+                match token.verify::<AlwaysValid<serde_json::Value>>(
+                    &public_key,
+                    implicit_assertion.as_bytes(),
+                ) {
+                    Ok(_) => Err("verifying token should fail".into()),
+                    Err(_) => Ok(()),
+                }
+            }
+            PasetoTest {
+                token: token_str,
                 footer,
                 implicit_assertion,
                 purpose:
@@ -96,36 +162,33 @@ impl PasetoTest {
                         public_key,
                         secret_key,
                     },
-                result: TestResult::Failure { .. },
-            } => {}
-            PasetoTest {
-                token,
-                footer,
-                implicit_assertion,
-                purpose:
-                    PasetoPurpose::Public {
-                        public_key,
-                        secret_key,
-                    },
                 result: TestResult::Success { payload, .. },
-            } => {}
+            } => {
+                let public_key = PublicKey::<V>::from_key(&public_key);
+                let secret_key = SecretKey::<V>::from_key(&secret_key);
+
+                let token: SignedToken<V, Vec<u8>> = token_str.parse().unwrap();
+                assert_eq!(token.footer(), footer.as_bytes());
+
+                let token = token
+                    .verify::<AlwaysValid<serde_json::Value>>(
+                        &public_key,
+                        implicit_assertion.as_bytes(),
+                    )
+                    .unwrap();
+
+                let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
+                assert_eq!(token.message.0, payload);
+
+                let token = token
+                    .sign(&secret_key, implicit_assertion.as_bytes())
+                    .unwrap();
+
+                assert_eq!(token.to_string(), token_str);
+
+                Ok(())
+            }
         }
-
-        Ok(())
-
-        // if let Some(paserk) = self.paserk {
-        //     let key = Key::<V, K>::from_key(&self.key);
-        //     let kid: KeyId<V, K> = key.to_id();
-        //     let kid2: KeyId<V, K> = paserk.parse().unwrap();
-
-        //     if kid != kid2 {
-        //         return Err("decode failed".into());
-        //     }
-        //     if kid.to_string() != paserk {
-        //         return Err("encode failed".into());
-        //     }
-        // }
-        // Ok(())
     }
 }
 
@@ -177,12 +240,15 @@ impl<'a, const B: bool> Deserialize<'a> for Bool<B> {
 enum TestResult {
     #[serde(rename_all = "kebab-case")]
     Success {
+        #[allow(dead_code)]
         expect_fail: Bool<false>,
         payload: String,
     },
     #[serde(rename_all = "kebab-case")]
     Failure {
+        #[allow(dead_code)]
         expect_fail: Bool<true>,
+        #[allow(dead_code)]
         payload: (),
     },
 }
@@ -454,51 +520,51 @@ enum TestResult {
 //     }
 // }
 
-// trait NewKey {
-//     fn from_key(s: &str) -> Self;
-// }
+trait ParseKey {
+    fn from_key(s: &str) -> Self;
+}
 
-// impl NewKey for Key<V3, Local> {
-//     fn from_key(s: &str) -> Self {
-//         let b = hex::decode(s).unwrap();
-//         Self::from_bytes(b.try_into().unwrap())
-//     }
-// }
+impl ParseKey for SymmetricKey<V3> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
 
-// impl NewKey for Key<V4, Local> {
-//     fn from_key(s: &str) -> Self {
-//         let b = hex::decode(s).unwrap();
-//         Self::from_bytes(b.try_into().unwrap())
-//     }
-// }
+impl ParseKey for SymmetricKey<V4> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(b.try_into().unwrap())
+    }
+}
 
-// impl NewKey for Key<V3, Secret> {
-//     fn from_key(s: &str) -> Self {
-//         let b = hex::decode(s).unwrap();
-//         Self::from_bytes(&b).unwrap()
-//     }
-// }
+impl ParseKey for SecretKey<V3> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_bytes(&b).unwrap()
+    }
+}
 
-// impl NewKey for Key<V4, Secret> {
-//     fn from_key(s: &str) -> Self {
-//         let b = hex::decode(s).unwrap();
-//         Self::from_keypair_bytes(&b).unwrap()
-//     }
-// }
+impl ParseKey for SecretKey<V4> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_keypair_bytes(&b).unwrap()
+    }
+}
 
-// impl NewKey for Key<V3, Public> {
-//     fn from_key(s: &str) -> Self {
-//         let b = hex::decode(s).unwrap();
-//         Self::from_sec1_bytes(&b).unwrap()
-//     }
-// }
+impl ParseKey for PublicKey<V3> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_sec1_bytes(&b).unwrap()
+    }
+}
 
-// impl NewKey for Key<V4, Public> {
-//     fn from_key(s: &str) -> Self {
-//         let b = hex::decode(s).unwrap();
-//         Self::from_public_key(&b).unwrap()
-//     }
-// }
+impl ParseKey for PublicKey<V4> {
+    fn from_key(s: &str) -> Self {
+        let b = hex::decode(s).unwrap();
+        Self::from_public_key(&b).unwrap()
+    }
+}
 
 // trait NewKey2 {
 //     fn from_key2(s: &str) -> Self;

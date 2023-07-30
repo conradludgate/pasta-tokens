@@ -159,7 +159,7 @@
 //!
 //! See the [`PwWrappedKey`] type for more info.
 
-use std::{fmt, ops::DerefMut};
+use std::fmt;
 
 type Bytes<N> = generic_array::GenericArray<u8, N>;
 
@@ -173,7 +173,7 @@ pub struct V4;
 use base64ct::Encoding;
 
 pub use key::{Key, KeyType};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 mod base64ct2;
 mod key;
@@ -218,7 +218,15 @@ pub trait Message {
 }
 
 /// An implementation of [`Message`] that requires no additional validation.
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct AlwaysValid<T>(pub T);
+
+impl<T> Message for AlwaysValid<T> {
+    fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+}
 
 /// Encoding scheme for PASETO footers.
 ///
@@ -245,6 +253,16 @@ impl<T: Serialize + DeserializeOwned> Footer for Json<T> {
             None => Err("missing footer".into()),
             Some(x) => serde_json::from_slice(x).map(Self).map_err(|e| e.into()),
         }
+    }
+}
+
+impl Footer for Vec<u8> {
+    fn encode(&self) -> Vec<u8> {
+        self.clone()
+    }
+
+    fn decode(footer: Option<&[u8]>) -> Result<Self, Box<dyn std::error::Error>> {
+        Ok(footer.unwrap_or_default().to_owned())
     }
 }
 
@@ -308,8 +326,8 @@ impl Version for V4 {
 pub struct UnsecuredToken<V, T, M, F = (), E = JsonEncoding> {
     version_header: V,
     token_type: T,
-    message: M,
-    footer: F,
+    pub message: M,
+    pub footer: F,
     encoding: E,
 }
 
@@ -390,10 +408,14 @@ impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredTo
         f.write_str(T::TOKEN_TYPE)?;
         f.write_str(".")?;
         f.write_str(&base64ct::Base64UrlUnpadded::encode_string(&self.message))?;
-        f.write_str(".")?;
-        f.write_str(&base64ct::Base64UrlUnpadded::encode_string(
-            &self.encoded_footer,
-        ))?;
+
+        if !self.encoded_footer.is_empty() {
+            f.write_str(".")?;
+            f.write_str(&base64ct::Base64UrlUnpadded::encode_string(
+                &self.encoded_footer,
+            ))?;
+        }
+
         Ok(())
     }
 }
@@ -433,6 +455,12 @@ impl<V: Version, T: TokenType, F: Footer, E: PayloadEncoding> std::str::FromStr
     }
 }
 
+impl<V, T, F, E> SecuredToken<V, T, F, E> {
+    pub fn footer(&self) -> &F {
+        &self.footer
+    }
+}
+
 // impl<V: LocalVersion, F: Footer, E: MessageEncoding> SecuredToken<V, Local, F, E> {}
 
 // /// Internally used traits for encryption version configuration
@@ -442,6 +470,7 @@ impl<V: Version, T: TokenType, F: Footer, E: PayloadEncoding> std::str::FromStr
 //     pub use crate::wrap::{PieVersion, PieWrapType, WrapType};
 // }
 
+#[derive(Debug)]
 pub enum PasetoError {
     Base64DecodeError,
     InvalidKey,
