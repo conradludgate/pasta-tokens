@@ -4,8 +4,8 @@ use generic_array::ArrayLength;
 use signature::{DigestSigner, DigestVerifier};
 
 use crate::{
-    Bytes, Footer, JsonEncoding, Key, KeyType, Message, MessageEncoding, PayloadEncoding,
-    PublicKey, SecretKey, SignedToken, TokenType, UnsignedToken, Version,
+    Bytes, Footer, KeyType, Message, MessageEncoding, PayloadEncoding, PublicKey, SecretKey,
+    SignedToken, TokenType, UnsignedToken, Version,
 };
 
 /// General information about a PASETO/PASERK version
@@ -22,6 +22,28 @@ pub trait PublicVersion: Version {
 
     fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey;
     fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey;
+
+    #[doc(hidden)]
+    fn sign(
+        k: &Bytes<Self::Secret>,
+        h: &[u8],
+        m: &[u8],
+        f: &[u8],
+        i: &[u8],
+    ) -> Bytes<Self::Signature> {
+        generic_sign::<Self>(k, h, m, f, i)
+    }
+
+    fn verify(
+        k: &Bytes<Self::Public>,
+        h: &[u8],
+        m: &[u8],
+        f: &[u8],
+        i: &[u8],
+        sig: &Bytes<Self::Signature>,
+    ) -> Result<(), signature::Error> {
+        generic_verify::<Self>(k, h, m, f, i, sig)
+    }
 }
 
 /// Public verifying/encrypting keys
@@ -49,27 +71,178 @@ impl TokenType for Public {
 }
 
 #[cfg(feature = "v4")]
-impl<M> UnsignedToken<crate::V4, M> {
-    pub fn new_v4_public(message: M) -> Self {
-        Self {
-            version_header: crate::V4,
-            token_type: Public,
-            message,
-            footer: (),
-            encoding: JsonEncoding,
+pub mod v4 {
+    use generic_array::sequence::Split;
+    use generic_array::typenum::{U32, U64};
+
+    use super::PublicVersion;
+    use crate::Bytes;
+    use crate::V4;
+
+    pub struct SigningKey(ed25519_dalek::SigningKey);
+
+    pub struct VerifyingKey(ed25519_dalek::VerifyingKey);
+    pub type SignatureDigest = ed25519_dalek::Sha512;
+
+    impl signature::DigestSigner<SignatureDigest, Bytes<U64>> for SigningKey {
+        fn try_sign_digest(&self, digest: SignatureDigest) -> Result<Bytes<U64>, signature::Error> {
+            self.0.try_sign_digest(digest).map(|x| x.to_bytes().into())
+        }
+    }
+
+    impl signature::DigestVerifier<SignatureDigest, Bytes<U64>> for VerifyingKey {
+        fn verify_digest(
+            &self,
+            digest: SignatureDigest,
+            signature: &Bytes<U64>,
+        ) -> Result<(), signature::Error> {
+            let sig = ed25519_dalek::Signature::from_bytes(&(*signature).into());
+            self.0.verify_digest(digest, &sig)
+        }
+    }
+
+    impl PublicVersion for V4 {
+        /// Compressed edwards y point
+        type Public = U32;
+        /// Ed25519 scalar key, concatenated with the public key bytes
+        type Secret = U64;
+
+        type Signature = U64;
+        type SigningKey = SigningKey;
+        type VerifyingKey = VerifyingKey;
+        type SignatureDigest = SignatureDigest;
+
+        fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey {
+            let (sk, _pk): (Bytes<U32>, _) = (*key).split();
+            SigningKey(ed25519_dalek::SigningKey::from_bytes(&sk.into()))
+        }
+        fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey {
+            VerifyingKey(
+                ed25519_dalek::VerifyingKey::from_bytes(&(*key).into())
+                    .expect("validity of this public key should already be asserted"),
+            )
+        }
+
+        fn sign(
+            k: &Bytes<Self::Secret>,
+            h: &[u8],
+            m: &[u8],
+            f: &[u8],
+            i: &[u8],
+        ) -> Bytes<Self::Signature> {
+            super::generic_sign::<Self>(k, h, m, f, i)
+        }
+
+        fn verify(
+            k: &Bytes<Self::Public>,
+            h: &[u8],
+            m: &[u8],
+            f: &[u8],
+            i: &[u8],
+            sig: &Bytes<Self::Signature>,
+        ) -> Result<(), signature::Error> {
+            super::generic_verify::<Self>(k, h, m, f, i, sig)
+        }
+    }
+
+    impl<M> crate::UnsignedToken<V4, M> {
+        pub fn new_v4_public(message: M) -> Self {
+            Self {
+                version_header: V4,
+                token_type: super::Public,
+                message,
+                footer: (),
+                encoding: crate::JsonEncoding,
+            }
         }
     }
 }
 
 #[cfg(feature = "v3")]
-impl<M> UnsignedToken<crate::V3, M> {
-    pub fn new_v3_public(message: M) -> Self {
-        Self {
-            version_header: crate::V3,
-            token_type: Public,
-            message,
-            footer: (),
-            encoding: JsonEncoding,
+mod v3 {
+    use generic_array::typenum::{U48, U49, U96};
+
+    use super::PublicVersion;
+    use crate::Bytes;
+    use crate::V3;
+
+    pub struct SigningKey(p384::ecdsa::SigningKey);
+    pub struct VerifyingKey(p384::ecdsa::VerifyingKey);
+    pub type SignatureDigest = <p384::NistP384 as ecdsa::hazmat::DigestPrimitive>::Digest;
+
+    impl signature::DigestSigner<SignatureDigest, Bytes<U96>> for SigningKey {
+        fn try_sign_digest(&self, digest: SignatureDigest) -> Result<Bytes<U96>, signature::Error> {
+            self.0
+                .try_sign_digest(digest)
+                .map(|x: p384::ecdsa::Signature| x.to_bytes())
+        }
+    }
+    impl signature::DigestVerifier<SignatureDigest, Bytes<U96>> for VerifyingKey {
+        fn verify_digest(
+            &self,
+            digest: SignatureDigest,
+            signature: &Bytes<U96>,
+        ) -> Result<(), signature::Error> {
+            let sig = p384::ecdsa::Signature::from_bytes(signature)?;
+            self.0.verify_digest(digest, &sig)
+        }
+    }
+
+    impl PublicVersion for V3 {
+        /// P-384 Public Key in compressed format
+        type Public = U49;
+        /// P-384 Secret Key (384 bits = 48 bytes)
+        type Secret = U48;
+
+        type Signature = U96;
+        type SigningKey = SigningKey;
+        type VerifyingKey = VerifyingKey;
+        type SignatureDigest = SignatureDigest;
+
+        fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey {
+            SigningKey(
+                p384::ecdsa::SigningKey::from_bytes(key)
+                    .expect("secret key validity should already be asserted"),
+            )
+        }
+        fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey {
+            VerifyingKey(
+                p384::ecdsa::VerifyingKey::from_sec1_bytes(key)
+                    .expect("secret key validity should already be asserted"),
+            )
+        }
+
+        fn sign(
+            k: &Bytes<Self::Secret>,
+            h: &[u8],
+            m: &[u8],
+            f: &[u8],
+            i: &[u8],
+        ) -> Bytes<Self::Signature> {
+            super::generic_sign::<Self>(k, h, m, f, i)
+        }
+
+        fn verify(
+            k: &Bytes<Self::Public>,
+            h: &[u8],
+            m: &[u8],
+            f: &[u8],
+            i: &[u8],
+            sig: &Bytes<Self::Signature>,
+        ) -> Result<(), signature::Error> {
+            super::generic_verify::<Self>(k, h, m, f, i, sig)
+        }
+    }
+
+    impl<M> crate::UnsignedToken<V3, M> {
+        pub fn new_v3_public(message: M) -> Self {
+            Self {
+                version_header: V3,
+                token_type: super::Public,
+                message,
+                footer: (),
+                encoding: crate::JsonEncoding,
+            }
         }
     }
 }
@@ -99,13 +272,13 @@ fn generic_digest<V: PublicVersion>(
 }
 
 fn generic_sign<V: PublicVersion>(
-    key: &Key<V, Secret>,
+    key: &Bytes<V::Secret>,
     encoding_header: &[u8],
     message: &[u8],
     footer: &[u8],
     implicit: &[u8],
 ) -> Bytes<V::Signature> {
-    V::signing_key(&key.key).sign_digest(generic_digest::<V>(
+    V::signing_key(key).sign_digest(generic_digest::<V>(
         encoding_header,
         message,
         footer,
@@ -114,79 +287,28 @@ fn generic_sign<V: PublicVersion>(
 }
 
 fn generic_verify<V: PublicVersion>(
-    key: &Key<V, Public>,
+    key: &Bytes<V::Public>,
     encoding_header: &[u8],
     message: &[u8],
     footer: &[u8],
     implicit: &[u8],
     sig: &Bytes<V::Signature>,
 ) -> Result<(), signature::Error> {
-    V::verifying_key(&key.key).verify_digest(
+    V::verifying_key(key).verify_digest(
         generic_digest::<V>(encoding_header, message, footer, implicit),
         sig,
     )
 }
 
-// monomorphise early
-#[cfg(feature = "v3")]
-fn sign_v3(
-    key: &Key<crate::V3, Secret>,
-    encoding_header: &[u8],
-    message: &[u8],
-    footer: &[u8],
-    implicit: &[u8],
-) -> Bytes<<crate::V3 as PublicVersion>::Signature> {
-    generic_sign(key, encoding_header, message, footer, implicit)
-}
-
-// monomorphise early
-#[cfg(feature = "v3")]
-fn verify_v3(
-    key: &Key<crate::V3, Public>,
-    encoding_header: &[u8],
-    message: &[u8],
-    footer: &[u8],
-    implicit: &[u8],
-    sig: &Bytes<<crate::V3 as PublicVersion>::Signature>,
-) -> Result<(), signature::Error> {
-    generic_verify(key, encoding_header, message, footer, implicit, sig)
-}
-
-// monomorphise early
-#[cfg(feature = "v4")]
-fn sign_v4(
-    key: &Key<crate::V4, Secret>,
-    encoding_header: &[u8],
-    message: &[u8],
-    footer: &[u8],
-    implicit: &[u8],
-) -> Bytes<<crate::V4 as PublicVersion>::Signature> {
-    generic_sign(key, encoding_header, message, footer, implicit)
-}
-
-// monomorphise early
-#[cfg(feature = "v4")]
-fn verify_v4(
-    key: &Key<crate::V4, Public>,
-    encoding_header: &[u8],
-    message: &[u8],
-    footer: &[u8],
-    implicit: &[u8],
-    sig: &Bytes<<crate::V4 as PublicVersion>::Signature>,
-) -> Result<(), signature::Error> {
-    generic_verify(key, encoding_header, message, footer, implicit, sig)
-}
-
-#[cfg(feature = "v3")]
-impl<M: Message, F: Footer, E: MessageEncoding<M>> UnsignedToken<crate::V3, M, F, E> {
+impl<V: PublicVersion, M: Message, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, F, E> {
     pub fn sign(
         self,
-        key: &SecretKey<crate::V3>,
+        key: &SecretKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<SignedToken<crate::V3, F, E>, Box<dyn std::error::Error>> {
+    ) -> Result<SignedToken<V, F, E>, Box<dyn std::error::Error>> {
         let mut m = self.encoding.encode(&self.message)?;
         let f = self.footer.encode();
-        let sig = sign_v3(key, E::SUFFIX.as_bytes(), &m, &f, implicit_assertions);
+        let sig = V::sign(&key.key, E::SUFFIX.as_bytes(), &m, &f, implicit_assertions);
         m.extend_from_slice(&sig);
 
         Ok(SignedToken {
@@ -200,79 +322,20 @@ impl<M: Message, F: Footer, E: MessageEncoding<M>> UnsignedToken<crate::V3, M, F
     }
 }
 
-#[cfg(feature = "v3")]
-impl<F: Footer, E: PayloadEncoding> SignedToken<crate::V3, F, E> {
+impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
     pub fn verify<M: Message>(
         self,
-        key: &PublicKey<crate::V3>,
+        key: &PublicKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<UnsignedToken<crate::V3, M, F, E>, Box<dyn std::error::Error>>
+    ) -> Result<UnsignedToken<V, M, F, E>, Box<dyn std::error::Error>>
     where
         E: MessageEncoding<M>,
     {
-        let (m, sig) = self.message.split_at(
-            self.message.len() - <<crate::V3 as PublicVersion>::Signature as Unsigned>::USIZE,
-        );
-        verify_v3(
-            key,
-            E::SUFFIX.as_bytes(),
-            m,
-            &self.encoded_footer,
-            implicit_assertions,
-            sig.into(),
-        )
-        .map_err(|_| "decryption error")?;
-
-        let message = self.encoding.decode(m)?;
-
-        Ok(UnsignedToken {
-            version_header: self.version_header,
-            token_type: self.token_type,
-            message,
-            footer: self.footer,
-            encoding: self.encoding,
-        })
-    }
-}
-
-#[cfg(feature = "v4")]
-impl<M: Message, F: Footer, E: MessageEncoding<M>> UnsignedToken<crate::V4, M, F, E> {
-    pub fn sign(
-        self,
-        key: &SecretKey<crate::V4>,
-        implicit_assertions: &[u8],
-    ) -> Result<SignedToken<crate::V4, F, E>, Box<dyn std::error::Error>> {
-        let mut m = self.encoding.encode(&self.message)?;
-        let f = self.footer.encode();
-        let sig = sign_v4(key, E::SUFFIX.as_bytes(), &m, &f, implicit_assertions);
-        m.extend_from_slice(&sig);
-
-        Ok(SignedToken {
-            version_header: self.version_header,
-            token_type: self.token_type,
-            message: m,
-            encoded_footer: f,
-            footer: self.footer,
-            encoding: self.encoding,
-        })
-    }
-}
-
-#[cfg(feature = "v4")]
-impl<F: Footer, E: PayloadEncoding> SignedToken<crate::V4, F, E> {
-    pub fn verify<M: Message>(
-        self,
-        key: &PublicKey<crate::V4>,
-        implicit_assertions: &[u8],
-    ) -> Result<UnsignedToken<crate::V4, M, F, E>, Box<dyn std::error::Error>>
-    where
-        E: MessageEncoding<M>,
-    {
-        let (m, sig) = self.message.split_at(
-            self.message.len() - <<crate::V4 as PublicVersion>::Signature as Unsigned>::USIZE,
-        );
-        verify_v4(
-            key,
+        let (m, sig) = self
+            .message
+            .split_at(self.message.len() - <<V as PublicVersion>::Signature as Unsigned>::USIZE);
+        V::verify(
+            &key.key,
             E::SUFFIX.as_bytes(),
             m,
             &self.encoded_footer,
