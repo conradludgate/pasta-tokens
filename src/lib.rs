@@ -171,8 +171,6 @@ pub struct V3;
 pub struct V4;
 
 use base64ct::Encoding;
-use cipher::Unsigned;
-use generic_array::sequence::GenericSequence;
 
 pub use key::{Key, KeyType};
 use serde::{de::DeserializeOwned, Serialize};
@@ -180,8 +178,8 @@ use serde::{de::DeserializeOwned, Serialize};
 mod base64ct2;
 mod key;
 pub mod local;
-pub mod public;
 mod pae;
+pub mod public;
 
 /// General information about token types
 pub trait TokenType: Default {
@@ -189,7 +187,7 @@ pub trait TokenType: Default {
     const TOKEN_TYPE: &'static str;
 }
 
-pub trait PayloadEncoding {
+pub trait PayloadEncoding: Default {
     /// Suffix for this encoding type
     const SUFFIX: &'static str;
 }
@@ -199,6 +197,7 @@ pub trait MessageEncoding<M: Message>: PayloadEncoding {
     fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error>>;
 }
 
+#[derive(Default)]
 pub struct JsonEncoding;
 
 impl PayloadEncoding for JsonEncoding {
@@ -218,9 +217,35 @@ pub trait Message {
     fn validate(&self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
+/// An implementation of [`Message`] that requires no additional validation.
+pub struct AlwaysValid<T>(pub T);
+
+/// Encoding scheme for PASETO footers.
+///
+/// Footers are allowed to be any encoding, but JSON is the standard.
+/// You can use the `Json` type to encode using JSON.
+///
+/// Footers are also optional, so the `()` empty type is considered as a missing footer.
 pub trait Footer: Sized {
     fn encode(&self) -> Vec<u8>;
-    fn decode(footer: Option<&str>) -> Result<Self, Box<dyn std::error::Error>>;
+    fn decode(footer: Option<&[u8]>) -> Result<Self, Box<dyn std::error::Error>>;
+}
+
+/// `Json` is a type wrapper to implement `Footer` for all types that implement
+/// [`serde::Serialize`] and [`serde::Deserialize`]
+struct Json<T>(pub T);
+
+impl<T: Serialize + DeserializeOwned> Footer for Json<T> {
+    fn encode(&self) -> Vec<u8> {
+        serde_json::to_vec(&self.0).expect("json serialization should not panic")
+    }
+
+    fn decode(footer: Option<&[u8]>) -> Result<Self, Box<dyn std::error::Error>> {
+        match footer {
+            None => Err("missing footer".into()),
+            Some(x) => serde_json::from_slice(x).map(Self).map_err(|e| e.into()),
+        }
+    }
 }
 
 impl Footer for () {
@@ -228,7 +253,7 @@ impl Footer for () {
         Vec::new()
     }
 
-    fn decode(footer: Option<&str>) -> Result<Self, Box<dyn std::error::Error>> {
+    fn decode(footer: Option<&[u8]>) -> Result<Self, Box<dyn std::error::Error>> {
         match footer {
             Some(x) => Err(format!("unexpected footer {x:?}").into()),
             None => Ok(()),
@@ -246,7 +271,9 @@ mod sealed {
     impl Sealed for crate::V4 {}
 }
 
-/// General information about a PASETO/PASERK version
+/// General information about a PASETO/PASERK version.
+///
+/// This library supports only version [`V3`] and [`V4`].
 pub trait Version: Default + sealed::Sealed {
     /// Header for PASETO
     const PASETO_HEADER: &'static str;
@@ -266,6 +293,18 @@ impl Version for V4 {
     const PASERK_HEADER: &'static str = "k4";
 }
 
+/// An unsecured token.
+///
+/// This represents a PASETO without any encryption or signatures.
+/// Using one of the following aliases is suggested
+/// * [`VerifiedToken`] - A `public` PASETO without the signature.
+/// * [`UnencryptedToken`] - A `local` PASETO without encryption.
+///
+/// This type is un-serializable as it isn't secured. For that you will want [`SecuredToken`].
+///
+/// To convert to a [`SecuredToken`], you will need to use either
+/// * [`VerifiedToken::sign`]
+/// * [`UnencryptedToken::encrypt`]
 pub struct UnsecuredToken<V, T, M, F = (), E = JsonEncoding> {
     version_header: V,
     token_type: T,
@@ -275,6 +314,9 @@ pub struct UnsecuredToken<V, T, M, F = (), E = JsonEncoding> {
 }
 
 impl<V, T, M, E> UnsecuredToken<V, T, M, (), E> {
+    /// Set the footer for this token.
+    ///
+    /// Footers are embedded into the token as base64 only. They are authenticated but not encrypted.
     pub fn with_footer<F>(self, footer: F) -> UnsecuredToken<V, T, M, F, E> {
         UnsecuredToken {
             version_header: self.version_header,
@@ -287,6 +329,9 @@ impl<V, T, M, E> UnsecuredToken<V, T, M, (), E> {
 }
 
 impl<V, T, M, F> UnsecuredToken<V, T, M, F, JsonEncoding> {
+    /// Set the payload encoding for this token.
+    ///
+    /// The PASETO spec only allows JSON _for now_, but one day this might be extended.
     pub fn with_encoding<E>(self, encoding: E) -> UnsecuredToken<V, T, M, F, E> {
         UnsecuredToken {
             version_header: self.version_header,
@@ -298,6 +343,19 @@ impl<V, T, M, F> UnsecuredToken<V, T, M, F, JsonEncoding> {
     }
 }
 
+/// A secured token.
+///
+/// This represents a PASETO that is signed or encrypted.
+/// Using one of the following aliases is suggested
+/// * [`SignedToken`] - A `public` PASETO that is signed.
+/// * [`EncryptedToken`] - A `local` PASETO that is encryption.
+///
+/// This type has a payload that is currently inaccessible. To access it, you will need to
+/// decrypt/verify the contents. For that you will want [`UnsecuredToken`].
+///
+/// To convert to an [`UnsecuredToken`], you will need to use either
+/// * [`SignedToken::verify`]
+/// * [`EncryptedToken::decrypt`]
 pub struct SecuredToken<V, T, F = (), E = JsonEncoding> {
     version_header: V,
     token_type: T,
@@ -307,14 +365,21 @@ pub struct SecuredToken<V, T, F = (), E = JsonEncoding> {
     encoding: E,
 }
 
+/// A symmetric key for `local` encrypted tokens
 pub type SymmetricKey<V> = Key<V, local::Local>;
+/// A public key for verifying `public` tokens
 pub type PublicKey<V> = Key<V, public::Public>;
+/// A secret key for signing `public` tokens
 pub type SecretKey<V> = Key<V, public::Secret>;
 
+/// An unencrypted PASETO.
 pub type UnencryptedToken<V, M, F = (), E = JsonEncoding> =
     UnsecuredToken<V, local::Local, M, F, E>;
+/// An encrypted PASETO.
 pub type EncryptedToken<V, F = (), E = JsonEncoding> = SecuredToken<V, local::Local, F, E>;
+/// A Verified PASETO that has either been parsed and verified, or is ready to be signed.
 pub type VerifiedToken<V, M, F = (), E = JsonEncoding> = UnsecuredToken<V, public::Public, M, F, E>;
+/// A Signed PASETO.
 pub type SignedToken<V, F = (), E = JsonEncoding> = SecuredToken<V, public::Public, F, E>;
 
 impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredToken<V, T, F, E> {
@@ -333,6 +398,41 @@ impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredTo
     }
 }
 
+impl<V: Version, T: TokenType, F: Footer, E: PayloadEncoding> std::str::FromStr
+    for SecuredToken<V, T, F, E>
+{
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix(V::PASETO_HEADER).ok_or(())?;
+        let s = s.strip_prefix(E::SUFFIX).ok_or(())?;
+        let s = s.strip_prefix('.').ok_or(())?;
+        let s = s.strip_prefix(T::TOKEN_TYPE).ok_or(())?;
+        let s = s.strip_prefix('.').ok_or(())?;
+
+        let (payload, footer) = match s.split_once('.') {
+            Some((payload, footer)) => (payload, Some(footer)),
+            None => (s, None),
+        };
+
+        let payload = base64ct::Base64UrlUnpadded::decode_vec(payload).map_err(|_| ())?;
+        let encoded_footer = footer
+            .map(base64ct::Base64UrlUnpadded::decode_vec)
+            .transpose()
+            .map_err(|_| ())?;
+        let footer = F::decode(encoded_footer.as_deref()).map_err(|_| ())?;
+
+        Ok(Self {
+            version_header: V::default(),
+            token_type: T::default(),
+            message: payload,
+            encoded_footer: encoded_footer.unwrap_or_default(),
+            footer,
+            encoding: E::default(),
+        })
+    }
+}
+
 // impl<V: LocalVersion, F: Footer, E: MessageEncoding> SecuredToken<V, Local, F, E> {}
 
 // /// Internally used traits for encryption version configuration
@@ -345,36 +445,6 @@ impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredTo
 pub enum PasetoError {
     Base64DecodeError,
     InvalidKey,
-}
-
-fn write_b64<W: std::fmt::Write>(b: &[u8], w: &mut W) -> std::fmt::Result {
-    let mut buffer = [0; 64];
-    for chunk in b.chunks(48) {
-        let s = base64ct::Base64UrlUnpadded::encode(chunk, &mut buffer).unwrap();
-        w.write_str(s)?;
-    }
-    Ok(())
-}
-
-fn read_b64<L: GenericSequence<u8> + DerefMut<Target = [u8]> + Default>(
-    s: &str,
-) -> Result<L, PasetoError> {
-    let expected_len = (s.len() + 3) / 4 * 3;
-    if expected_len < <L::Length as Unsigned>::USIZE {
-        return Err(PasetoError::Base64DecodeError);
-    }
-
-    let mut total = L::default();
-
-    let len = base64ct::Base64UrlUnpadded::decode(s, &mut total)
-        .map_err(|_| PasetoError::Base64DecodeError)?
-        .len();
-
-    if len != <L::Length as Unsigned>::USIZE {
-        return Err(PasetoError::Base64DecodeError);
-    }
-
-    Ok(total)
 }
 
 #[cfg(any(test, fuzzing))]

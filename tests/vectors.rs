@@ -1,17 +1,23 @@
-// use std::{fs, str::FromStr};
+use std::{fs, str::FromStr};
 
 use libtest_mimic::{Arguments, Failed, Trial};
+use pasta_tokens::{EncryptedToken, Version, V3, V4};
 // use rusty_paserk::{
 //     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
 //     Key, KeyId, KeyType, Local, PasetoError, PieWrappedKey, PlaintextKey, Public, PwWrappedKey,
 //     SealedKey, Secret, Version, V3, V4,
 // };
-// use serde::{de::DeserializeOwned, Deserialize};
+use serde::{
+    de::{DeserializeOwned, Visitor},
+    Deserialize,
+};
 
 fn main() {
     let args = Arguments::from_args();
 
     let mut tests = vec![];
+
+    PasetoTest::add_all_tests(&mut tests);
 
     // IdTest::add_all_tests(&mut tests);
     // KeyTest::add_all_tests(&mut tests);
@@ -22,23 +28,164 @@ fn main() {
     libtest_mimic::run(&args, tests).exit();
 }
 
-// fn read_test<Test: DeserializeOwned>(v: &str) -> TestFile<Test> {
-//     let path = format!("tests/test-vectors/{v}");
-//     let file = fs::read_to_string(path).unwrap();
-//     serde_json::from_str(&file).unwrap()
-// }
+fn read_test<Test: DeserializeOwned>(v: &str) -> TestFile<Test> {
+    let path = format!("tests/test-vectors/{v}");
+    let file = fs::read_to_string(path).unwrap();
+    serde_json::from_str(&file).unwrap()
+}
 
-// #[derive(Deserialize)]
-// struct TestFile<T> {
-//     tests: Vec<Test<T>>,
-// }
+#[derive(Deserialize)]
+struct TestFile<T> {
+    tests: Vec<Test<T>>,
+}
 
-// #[derive(Deserialize)]
-// struct Test<T> {
-//     name: String,
-//     #[serde(flatten)]
-//     test_data: T,
-// }
+#[derive(Deserialize)]
+struct Test<T> {
+    name: String,
+    #[serde(flatten)]
+    test_data: T,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
+struct PasetoTest {
+    token: String,
+    footer: String,
+    implicit_assertion: String,
+    #[serde(flatten)]
+    purpose: PasetoPurpose,
+    #[serde(flatten)]
+    result: TestResult,
+}
+
+impl PasetoTest {
+    fn add_all_tests(tests: &mut Vec<Trial>) {
+        Self::add_tests::<V3>(tests);
+        // Self::add_tests::<V4>(tests);
+    }
+
+    fn add_tests<V: Version>(tests: &mut Vec<Trial>) {
+        let test_file: TestFile<Self> = read_test(&format!("{}.json", V::PASETO_HEADER));
+        for test in test_file.tests {
+            tests.push(Trial::test(test.name, || test.test_data.test::<V>()));
+        }
+    }
+
+    fn test<V: Version>(self) -> Result<(), Failed> {
+        match self {
+            PasetoTest {
+                token,
+                footer,
+                implicit_assertion,
+                purpose: PasetoPurpose::Local { nonce, key },
+                result: TestResult::Failure { .. },
+            } => {}
+            PasetoTest {
+                token,
+                footer,
+                implicit_assertion,
+                purpose: PasetoPurpose::Local { nonce, key },
+                result: TestResult::Success { payload, .. },
+            } => {}
+            PasetoTest {
+                token,
+                footer,
+                implicit_assertion,
+                purpose:
+                    PasetoPurpose::Public {
+                        public_key,
+                        secret_key,
+                    },
+                result: TestResult::Failure { .. },
+            } => {}
+            PasetoTest {
+                token,
+                footer,
+                implicit_assertion,
+                purpose:
+                    PasetoPurpose::Public {
+                        public_key,
+                        secret_key,
+                    },
+                result: TestResult::Success { payload, .. },
+            } => {}
+        }
+
+        Ok(())
+
+        // if let Some(paserk) = self.paserk {
+        //     let key = Key::<V, K>::from_key(&self.key);
+        //     let kid: KeyId<V, K> = key.to_id();
+        //     let kid2: KeyId<V, K> = paserk.parse().unwrap();
+
+        //     if kid != kid2 {
+        //         return Err("decode failed".into());
+        //     }
+        //     if kid.to_string() != paserk {
+        //         return Err("encode failed".into());
+        //     }
+        // }
+        // Ok(())
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum PasetoPurpose {
+    #[serde(rename_all = "kebab-case")]
+    Local { nonce: String, key: String },
+    #[serde(rename_all = "kebab-case")]
+    Public {
+        public_key: String,
+        secret_key: String,
+    },
+}
+
+#[derive(Debug)]
+struct Bool<const B: bool>;
+
+impl<'a, const B: bool> Deserialize<'a> for Bool<B> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'a>,
+    {
+        struct BoolVisitor<const B: bool>;
+
+        impl<'a, const B: bool> Visitor<'a> for BoolVisitor<B> {
+            type Value = Bool<B>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(formatter, "{B}")
+            }
+
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                (v == B)
+                    .then_some(Bool)
+                    .ok_or_else(|| E::custom(format!("expected {B}, got {v}")))
+            }
+        }
+
+        deserializer.deserialize_bool(BoolVisitor)
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+enum TestResult {
+    #[serde(rename_all = "kebab-case")]
+    Success {
+        expect_fail: Bool<false>,
+        payload: String,
+    },
+    #[serde(rename_all = "kebab-case")]
+    Failure {
+        expect_fail: Bool<true>,
+        payload: (),
+    },
+}
 
 // #[derive(Deserialize)]
 // struct IdTest {
