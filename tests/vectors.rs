@@ -2,8 +2,8 @@ use std::fs;
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use pasta_tokens::{
-    local::LocalVersion, public::PublicVersion, AlwaysValid, EncryptedToken, PublicKey, SecretKey,
-    SignedToken, SymmetricKey, V3, V4,
+    local::LocalVersion, public::PublicVersion, EncryptedToken, PublicKey, SecretKey, SignedToken,
+    SymmetricKey, V3, V4,
 };
 // use rusty_paserk::{
 //     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
@@ -99,9 +99,7 @@ impl PasetoTest {
                 let Ok(token): Result<EncryptedToken::<V, Vec<u8>>, _> = token.parse() else { return Ok(()) };
                 assert_eq!(token.footer(), footer.as_bytes());
 
-                match token
-                    .decrypt::<AlwaysValid<serde_json::Value>>(&key, implicit_assertion.as_bytes())
-                {
+                match token.decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes()) {
                     Ok(_) => Err("decrypting token should fail".into()),
                     Err(_) => Ok(()),
                 }
@@ -118,11 +116,11 @@ impl PasetoTest {
                 assert_eq!(token.footer(), footer.as_bytes());
 
                 let token = token
-                    .decrypt::<AlwaysValid<serde_json::Value>>(&key, implicit_assertion.as_bytes())
+                    .decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes())
                     .unwrap();
 
                 let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
-                assert_eq!(token.message.0, payload);
+                assert_eq!(token.message, payload);
 
                 let nonce = hex::decode(nonce).unwrap().try_into().unwrap();
                 let token = token
@@ -145,10 +143,8 @@ impl PasetoTest {
                 let Ok(token): Result<SignedToken::<V, Vec<u8>>, _> = token.parse() else { return Ok(()) };
                 assert_eq!(token.footer(), footer.as_bytes());
 
-                match token.verify::<AlwaysValid<serde_json::Value>>(
-                    &public_key,
-                    implicit_assertion.as_bytes(),
-                ) {
+                match token.verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())
+                {
                     Ok(_) => Err("verifying token should fail".into()),
                     Err(_) => Ok(()),
                 }
@@ -171,14 +167,11 @@ impl PasetoTest {
                 assert_eq!(token.footer(), footer.as_bytes());
 
                 let token = token
-                    .verify::<AlwaysValid<serde_json::Value>>(
-                        &public_key,
-                        implicit_assertion.as_bytes(),
-                    )
+                    .verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())
                     .unwrap();
 
                 let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
-                assert_eq!(token.message.0, payload);
+                assert_eq!(token.message, payload);
 
                 let token = token
                     .sign(&secret_key, implicit_assertion.as_bytes())

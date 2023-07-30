@@ -1,3 +1,9 @@
+//! PASETO local encryption
+//!
+//! Example use cases:
+//! * Tamper-proof, short-lived immutable data stored on client machines.
+//!   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
+
 use cipher::{KeyInit, StreamCipher, Unsigned};
 use digest::Mac;
 use generic_array::{ArrayLength, GenericArray};
@@ -5,11 +11,15 @@ use rand::Rng;
 use subtle::ConstantTimeEq;
 
 use crate::{
-    Bytes, EncryptedToken, Footer, KeyType, Message, MessageEncoding, PayloadEncoding,
-    SymmetricKey, TokenType, UnencryptedToken, Version,
+    Bytes, EncryptedToken, Footer, KeyType, MessageEncoding, PayloadEncoding, SymmetricKey,
+    TokenType, UnencryptedToken, Version,
 };
 
-/// Local symmetric encryption/decrypting keys
+/// PASETO local encryption
+///
+/// Example use cases:
+/// * Tamper-proof, short-lived immutable data stored on client machines.
+///   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
 #[derive(Debug, Default)]
 pub struct Local;
 
@@ -37,6 +47,7 @@ pub trait LocalVersion: Version {
     /// Size of the symmetric local key
     type KeySize: ArrayLength<u8>;
 
+    /// The size of the authentication tag that this encryption version produces
     type TagSize: ArrayLength<u8>;
 
     #[doc(hidden)]
@@ -154,7 +165,8 @@ fn generic_decrypt<V: LocalEncryption>(
     }
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-local")]
+#[cfg_attr(docsrs, doc(cfg(feature = "v3-local")))]
 mod v3 {
     use cipher::KeyIvInit;
     use generic_array::{
@@ -163,7 +175,7 @@ mod v3 {
         ArrayLength,
     };
 
-    use crate::{Bytes, Message, UnencryptedToken, V3};
+    use crate::{Bytes, UnencryptedToken, V3};
 
     use super::{
         generic_decrypt, generic_encrypt, GenericCipher, GenericMac, Kdf, LocalEncryption,
@@ -236,20 +248,22 @@ mod v3 {
         type Mac = Hash;
     }
 
-    impl<M: Message> UnencryptedToken<crate::V3, M> {
+    impl<M> UnencryptedToken<crate::V3, M> {
+        /// Create a new V3 [`EncryptedToken`](crate::EncryptedToken) builder with the given message payload
         pub fn new_v3_local(message: M) -> Self {
             Self {
                 version_header: crate::V3,
                 token_type: super::Local,
                 message,
                 footer: (),
-                encoding: crate::JsonEncoding,
+                encoding: crate::Json(()),
             }
         }
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-local")]
+#[cfg_attr(docsrs, doc(cfg(feature = "v4-local")))]
 mod v4 {
     use chacha20::XChaCha20;
     use cipher::KeyIvInit;
@@ -264,7 +278,7 @@ mod v4 {
         generic_decrypt, generic_encrypt, GenericCipher, GenericMac, Kdf, LocalEncryption,
         LocalVersion,
     };
-    use crate::{Bytes, Message, UnencryptedToken, V4};
+    use crate::{Bytes, UnencryptedToken, V4};
 
     pub struct Hash;
     pub struct Cipher;
@@ -338,20 +352,21 @@ mod v4 {
         type Mac = Hash;
     }
 
-    impl<M: Message> UnencryptedToken<V4, M> {
+    impl<M> UnencryptedToken<V4, M> {
+        /// Create a new V4 [`EncryptedToken`](crate::EncryptedToken) builder with the given message payload
         pub fn new_v4_local(message: M) -> Self {
             Self {
                 version_header: V4,
                 token_type: super::Local,
                 message,
                 footer: (),
-                encoding: crate::JsonEncoding,
+                encoding: crate::Json(()),
             }
         }
     }
 }
 
-impl<V: LocalVersion, M: Message, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M, F, E> {
+impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M, F, E> {
     fn encrypt_inner(
         self,
         key: &SymmetricKey<V>,
@@ -374,13 +389,23 @@ impl<V: LocalVersion, M: Message, F: Footer, E: MessageEncoding<M>> UnencryptedT
         Ok(EncryptedToken {
             version_header: self.version_header,
             token_type: self.token_type,
-            message: m,
+            payload: m,
             encoded_footer: f,
             footer: self.footer,
             encoding: self.encoding,
         })
     }
 
+    /// Encrypt the token
+    ///
+    /// ### Implicit Assertions
+    ///
+    /// PASETO `v3` and `v4` tokens support a feature called **implicit assertions**, which are used
+    /// in the calculation of the MAC (`local` tokens) or digital signature (`public` tokens), but
+    /// **NOT** stored in the token. (Thus, its implicitness.)
+    ///
+    /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
+    /// if it was provided at the time of creation.
     pub fn encrypt(
         self,
         key: &SymmetricKey<V>,
@@ -402,7 +427,17 @@ impl<V: LocalVersion, M: Message, F: Footer, E: MessageEncoding<M>> UnencryptedT
 }
 
 impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
-    pub fn decrypt<M: Message>(
+    /// Decrypt the token
+    ///
+    /// ### Implicit Assertions
+    ///
+    /// PASETO `v3` and `v4` tokens support a feature called **implicit assertions**, which are used
+    /// in the calculation of the MAC (`local` tokens) or digital signature (`public` tokens), but
+    /// **NOT** stored in the token. (Thus, its implicitness.)
+    ///
+    /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
+    /// if it was provided at the time of creation.
+    pub fn decrypt<M>(
         mut self,
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],
@@ -410,7 +445,7 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
     where
         E: MessageEncoding<M>,
     {
-        let (n, m) = self.message.split_at_mut(NONCE_LEN);
+        let (n, m) = self.payload.split_at_mut(NONCE_LEN);
         let (m, t) = m.split_at_mut(m.len() - <<V as LocalVersion>::TagSize as Unsigned>::USIZE);
         V::decrypt(
             &key.key,

@@ -1,12 +1,10 @@
 use generic_array::GenericArray;
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 
-use crate::{
-    local::LocalVersion, Key, KeyType, PasetoError, PublicKey, SecretKey, SymmetricKey, Version,
-};
+use crate::{PasetoError, Key, Version, KeyType};
 
-#[cfg(feature = "v3")]
-impl SecretKey<crate::V3> {
+#[cfg(feature = "v3-public")]
+impl crate::SecretKey<crate::V3> {
     /// Decode a PEM encoded SEC1 p384 Secret Key
     ///
     /// ```
@@ -33,7 +31,7 @@ impl SecretKey<crate::V3> {
     }
 
     /// Get the corresponding V3 public key for this V3 secret key
-    pub fn public_key(&self) -> PublicKey<crate::V3> {
+    pub fn public_key(&self) -> crate::PublicKey<crate::V3> {
         use p384::{EncodedPoint, SecretKey};
 
         let sk = SecretKey::from_bytes(&self.key).unwrap();
@@ -46,8 +44,8 @@ impl SecretKey<crate::V3> {
     }
 }
 
-#[cfg(feature = "v3")]
-impl PublicKey<crate::V3> {
+#[cfg(feature = "v3-public")]
+impl crate::PublicKey<crate::V3> {
     /// Decode a PEM encoded p384 Public Key
     ///
     /// ```
@@ -86,8 +84,8 @@ impl PublicKey<crate::V3> {
     }
 }
 
-#[cfg(feature = "v4")]
-impl SecretKey<crate::V4> {
+#[cfg(feature = "v4-public")]
+impl crate::SecretKey<crate::V4> {
     /// Decode an Ed25519 Secret Keypair
     ///
     /// ```
@@ -128,15 +126,15 @@ impl SecretKey<crate::V4> {
     }
 
     /// Get the corresponding V4 public key for this V4 secret key
-    pub fn public_key(&self) -> PublicKey<crate::V4> {
+    pub fn public_key(&self) -> crate::PublicKey<crate::V4> {
         use generic_array::sequence::Split;
         let (_sk, pk): (GenericArray<u8, generic_array::typenum::U32>, _) = self.key.split();
         Key { key: pk }
     }
 }
 
-#[cfg(feature = "v4")]
-impl PublicKey<crate::V4> {
+#[cfg(feature = "v4-public")]
+impl crate::PublicKey<crate::V4> {
     /// Decode a PEM encoded SEC1 Ed25519 Secret Key
     ///
     /// ```
@@ -156,8 +154,8 @@ impl PublicKey<crate::V4> {
     }
 }
 
-#[cfg(feature = "v3")]
-impl SymmetricKey<crate::V3> {
+#[cfg(feature = "v3-local")]
+impl crate::SymmetricKey<crate::V3> {
     /// Create a V3 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
         Self { key: key.into() }
@@ -168,8 +166,8 @@ impl SymmetricKey<crate::V3> {
     }
 }
 
-#[cfg(feature = "v4")]
-impl SymmetricKey<crate::V4> {
+#[cfg(feature = "v4-local")]
+impl crate::SymmetricKey<crate::V4> {
     /// Create a V4 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
         Self { key: key.into() }
@@ -186,7 +184,8 @@ impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
     }
 }
 
-impl<V: LocalVersion> SymmetricKey<V> {
+#[cfg(feature = "local")]
+impl<V: crate::local::LocalVersion> crate::SymmetricKey<V> {
     /// Generate a random local key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)
@@ -200,8 +199,8 @@ impl<V: LocalVersion> SymmetricKey<V> {
     }
 }
 
-#[cfg(feature = "v4")]
-impl SecretKey<crate::V4> {
+#[cfg(feature = "v4-public")]
+impl crate::SecretKey<crate::V4> {
     /// Generate a random V4 secret key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)
@@ -219,8 +218,8 @@ impl SecretKey<crate::V4> {
     }
 }
 
-#[cfg(feature = "v3")]
-impl SecretKey<crate::V3> {
+#[cfg(feature = "v3-public")]
+impl crate::SecretKey<crate::V3> {
     /// Generate a random V3 secret key using OS random
     pub fn new_os_random() -> Self {
         Self::new_random(&mut OsRng)

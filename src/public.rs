@@ -1,8 +1,13 @@
+//! PASETO public signatures
+//!
+//! Example use cases:
+//! * Transparent claims provided by a third party.
+//!   + e.g. Authentication and authorization protocols (OAuth 2, OIDC).
 use cipher::Unsigned;
 use generic_array::ArrayLength;
 
 use crate::{
-    Bytes, Footer, KeyType, Message, MessageEncoding, PayloadEncoding, PublicKey, SecretKey,
+    Bytes, Footer, KeyType, MessageEncoding, PayloadEncoding, PublicKey, SecretKey,
     SignedToken, TokenType, VerifiedToken, Version,
 };
 
@@ -13,6 +18,7 @@ pub trait PublicVersion: Version {
     /// Size of the asymmetric secret key
     type SecretKeySize: ArrayLength<u8>;
 
+    /// Length of the signature this signing version produces
     type Signature: ArrayLength<u8>;
 
     #[doc(hidden)]
@@ -35,7 +41,11 @@ pub trait PublicVersion: Version {
     ) -> Result<(), signature::Error>;
 }
 
-/// Public verifying/encrypting keys
+/// PASETO public signatures
+///
+/// Example use cases:
+/// * Transparent claims provided by a third party.
+///   + e.g. Authentication and authorization protocols (OAuth 2, OIDC).
 #[derive(Debug, Default)]
 pub struct Public;
 
@@ -59,7 +69,8 @@ impl TokenType for Public {
     const TOKEN_TYPE: &'static str = "public";
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-public")]
+#[cfg_attr(docsrs, doc(cfg(feature = "v4-public")))]
 mod v4 {
     use generic_array::sequence::Split;
     use generic_array::typenum::{U32, U64};
@@ -128,19 +139,21 @@ mod v4 {
     }
 
     impl<M> crate::VerifiedToken<V4, M> {
+        /// Create a new V4 [`SignedToken`]crate::SignedToken) builder with the given message payload
         pub fn new_v4_public(message: M) -> Self {
             Self {
                 version_header: V4,
                 token_type: super::Public,
                 message,
                 footer: (),
-                encoding: crate::JsonEncoding,
+                encoding: crate::Json(()),
             }
         }
     }
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-public")]
+#[cfg_attr(docsrs, doc(cfg(feature = "v3-public")))]
 mod v3 {
     use generic_array::typenum::{U48, U49, U96};
     use signature::DigestSigner;
@@ -224,19 +237,30 @@ mod v3 {
     }
 
     impl<M> crate::VerifiedToken<V3, M> {
+        /// Create a new V3 [`SignedToken`]crate::SignedToken) builder with the given message payload
         pub fn new_v3_public(message: M) -> Self {
             Self {
                 version_header: V3,
                 token_type: super::Public,
                 message,
                 footer: (),
-                encoding: crate::JsonEncoding,
+                encoding: crate::Json(()),
             }
         }
     }
 }
 
-impl<V: PublicVersion, M: Message, F: Footer, E: MessageEncoding<M>> VerifiedToken<V, M, F, E> {
+impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> VerifiedToken<V, M, F, E> {
+    /// Sign this token
+    ///
+    /// ### Implicit Assertions
+    ///
+    /// PASETO `v3` and `v4` tokens support a feature called **implicit assertions**, which are used
+    /// in the calculation of the MAC (`local` tokens) or digital signature (`public` tokens), but
+    /// **NOT** stored in the token. (Thus, its implicitness.)
+    ///
+    /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
+    /// if it was provided at the time of creation.
     pub fn sign(
         self,
         key: &SecretKey<V>,
@@ -250,7 +274,7 @@ impl<V: PublicVersion, M: Message, F: Footer, E: MessageEncoding<M>> VerifiedTok
         Ok(SignedToken {
             version_header: self.version_header,
             token_type: self.token_type,
-            message: m,
+            payload: m,
             encoded_footer: f,
             footer: self.footer,
             encoding: self.encoding,
@@ -259,7 +283,17 @@ impl<V: PublicVersion, M: Message, F: Footer, E: MessageEncoding<M>> VerifiedTok
 }
 
 impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
-    pub fn verify<M: Message>(
+    /// Verify that this token was signed with the associated key
+    ///
+    /// ### Implicit Assertions
+    ///
+    /// PASETO `v3` and `v4` tokens support a feature called **implicit assertions**, which are used
+    /// in the calculation of the MAC (`local` tokens) or digital signature (`public` tokens), but
+    /// **NOT** stored in the token. (Thus, its implicitness.)
+    ///
+    /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
+    /// if it was provided at the time of creation.
+    pub fn verify<M>(
         self,
         key: &PublicKey<V>,
         implicit_assertions: &[u8],
@@ -268,8 +302,8 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
         E: MessageEncoding<M>,
     {
         let (m, sig) = self
-            .message
-            .split_at(self.message.len() - <<V as PublicVersion>::Signature as Unsigned>::USIZE);
+            .payload
+            .split_at(self.payload.len() - <<V as PublicVersion>::Signature as Unsigned>::USIZE);
 
         V::verify(
             &key.key,

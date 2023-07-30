@@ -72,17 +72,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "argon2"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95c2fcf79ad1932ac6269a738109997a83c227c09b75842ae564dc8ede6a861c"
-dependencies = [
- "base64ct",
- "blake2",
- "password-hash",
-]
-
-[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -596,23 +585,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "password-hash"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "346f04948ba92c43e8469c1ee6736c7563d71012b17d40745260fe106aac2166"
-dependencies = [
- "base64ct",
- "rand_core",
- "subtle",
-]
-
-[[package]]
 name = "pasta-tokens"
 version = "0.1.0"
 dependencies = [
  "aes",
  "arbitrary",
- "argon2",
  "base64",
  "base64ct",
  "blake2",
@@ -631,23 +608,12 @@ dependencies = [
  "libtest-mimic",
  "p384",
  "pasta-tokens",
- "pbkdf2",
  "rand",
  "serde",
  "serde_json",
  "sha2",
  "signature",
  "subtle",
-]
-
-[[package]]
-name = "pbkdf2"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0ca0b5a68607598bf3bad68f32227a8164f6254833f84eafaac409cd6746c31"
-dependencies = [
- "digest",
- "hmac",
 ]
 
 [[package]]
