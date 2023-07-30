@@ -2,14 +2,7 @@ use std::fmt;
 
 use generic_array::{ArrayLength, GenericArray};
 
-use crate::{PublicVersion, Version, local::{Local, LocalVersion}};
-
-/// Public verifying/encrypting keys
-#[derive(Debug, Default)]
-pub struct Public;
-/// Secret signing/decrypting keys
-#[derive(Debug)]
-pub struct Secret;
+use crate::Version;
 
 /// General information about key types
 pub trait KeyType<V: Version> {
@@ -19,22 +12,6 @@ pub trait KeyType<V: Version> {
     const HEADER: &'static str;
     /// ID header for this key type
     const ID: &'static str;
-}
-
-impl<V: PublicVersion> KeyType<V> for Public {
-    type KeyLen = V::Public;
-    const HEADER: &'static str = "public.";
-    const ID: &'static str = "pid.";
-}
-impl<V: PublicVersion> KeyType<V> for Secret {
-    type KeyLen = V::Secret;
-    const HEADER: &'static str = "secret.";
-    const ID: &'static str = "sid.";
-}
-impl<V: LocalVersion> KeyType<V> for Local {
-    type KeyLen = V::Local;
-    const HEADER: &'static str = "local.";
-    const ID: &'static str = "lid.";
 }
 
 /// A PASETO key.

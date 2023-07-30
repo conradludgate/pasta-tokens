@@ -159,9 +159,9 @@
 //!
 //! See the [`PwWrappedKey`] type for more info.
 
-use std::{borrow::Cow, fmt, ops::DerefMut, str::FromStr};
+use std::{fmt, ops::DerefMut};
 
-type Bytes<N> = GenericArray<u8, N>;
+type Bytes<N> = generic_array::GenericArray<u8, N>;
 
 #[cfg(feature = "v3")]
 #[derive(Default)]
@@ -172,14 +172,15 @@ pub struct V4;
 
 use base64ct::Encoding;
 use cipher::Unsigned;
-use generic_array::{sequence::GenericSequence, ArrayLength, GenericArray};
+use generic_array::sequence::GenericSequence;
 
-pub use key::{Key, KeyType, Public, Secret};
+pub use key::{Key, KeyType};
 use serde::{de::DeserializeOwned, Serialize};
 
 mod base64ct2;
 mod key;
-mod local;
+pub mod local;
+pub mod public;
 
 /// General information about token types
 pub trait TokenType: Default {
@@ -250,21 +251,6 @@ pub trait Version: Default {
     const PASERK_HEADER: &'static str;
 }
 
-/// General information about a PASETO/PASERK version
-pub trait PublicVersion: Version {
-    /// Size of the asymmetric public key
-    type Public: ArrayLength<u8>;
-    /// Size of the asymmetric secret key
-    type Secret: ArrayLength<u8>;
-
-    type Signature: ArrayLength<u8>;
-    type SigningKey: signature::Signer<GenericArray<u8, Self::Signature>>;
-    type VerifyingKey: signature::Verifier<GenericArray<u8, Self::Signature>>;
-
-    fn signing_key(key: GenericArray<u8, Self::Secret>) -> Self::SigningKey;
-    fn verifying_key(key: GenericArray<u8, Self::Public>) -> Self::VerifyingKey;
-}
-
 #[cfg(feature = "v3")]
 impl Version for V3 {
     const PASETO_HEADER: &'static str = "v3";
@@ -278,7 +264,7 @@ impl Version for V4 {
 }
 
 #[cfg(feature = "v4")]
-mod v4 {
+pub mod v4 {
     use chacha20::XChaCha20;
     use cipher::KeyIvInit;
     use generic_array::{
@@ -288,7 +274,8 @@ mod v4 {
     };
 
     use crate::local::{GenericCipher, GenericMac, LocalVersion};
-    use crate::{PublicVersion, V4};
+    use crate::public::PublicVersion;
+    use crate::{Bytes, V4};
 
     pub struct Hash;
     pub struct Cipher;
@@ -319,28 +306,68 @@ mod v4 {
         type TagSize = U32;
         type Cipher = Cipher;
         type Mac = Hash;
+
+        fn encrypt(
+            key: &Bytes<Self::Local>,
+            encoding_header: &[u8],
+            message: &mut [u8],
+            footer: &[u8],
+            implicit: &[u8],
+        ) -> ([u8; 32], Bytes<Self::TagSize>) {
+            crate::local::generic_encrypt::<Self, _>(
+                key,
+                encoding_header,
+                message,
+                footer,
+                implicit,
+                &mut rand::thread_rng(),
+            )
+        }
+
+        fn decrypt(
+            key: &Bytes<Self::Local>,
+            encoding_header: &[u8],
+            nonce: &[u8],
+            message: &mut [u8],
+            tag: &[u8],
+            footer: &[u8],
+            implicit: &[u8],
+        ) -> Result<(), ()> {
+            crate::local::generic_decrypt::<Self>(
+                key,
+                encoding_header,
+                nonce,
+                message,
+                tag,
+                footer,
+                implicit,
+            )
+        }
     }
 
     pub struct SigningKey(ed25519_dalek::SigningKey);
-    pub struct VerifyingKey(ed25519_dalek::VerifyingKey);
 
-    impl signature::Signer<GenericArray<u8, U64>> for SigningKey {
-        fn try_sign(&self, msg: &[u8]) -> Result<GenericArray<u8, U64>, signature::Error> {
-            self.0.try_sign(msg).map(|x| x.to_bytes().into())
+    pub struct VerifyingKey(ed25519_dalek::VerifyingKey);
+    pub type SignatureDigest = ed25519_dalek::Sha512;
+
+    impl signature::DigestSigner<SignatureDigest, Bytes<U64>> for SigningKey {
+        fn try_sign_digest(&self, digest: SignatureDigest) -> Result<Bytes<U64>, signature::Error> {
+            self.0.try_sign_digest(digest).map(|x| x.to_bytes().into())
         }
     }
-    impl signature::Verifier<GenericArray<u8, U64>> for VerifyingKey {
-        fn verify(
+
+    impl signature::DigestVerifier<SignatureDigest, Bytes<U64>> for VerifyingKey {
+        fn verify_digest(
             &self,
-            msg: &[u8],
-            signature: &GenericArray<u8, U64>,
+            digest: SignatureDigest,
+            signature: &Bytes<U64>,
         ) -> Result<(), signature::Error> {
             let sig = ed25519_dalek::Signature::from_bytes(&(*signature).into());
-            self.0.verify(msg, &sig)
+            self.0.verify_digest(digest, &sig)
         }
     }
 
-    impl PublicVersion for V4 {
+    impl PublicVersion for crate::V4 {
         /// Compressed edwards y point
         type Public = U32;
         /// Ed25519 scalar key, concatenated with the public key bytes
@@ -349,14 +376,15 @@ mod v4 {
         type Signature = U64;
         type SigningKey = SigningKey;
         type VerifyingKey = VerifyingKey;
+        type SignatureDigest = SignatureDigest;
 
-        fn signing_key(key: GenericArray<u8, Self::Secret>) -> Self::SigningKey {
-            let (sk, _pk): (GenericArray<u8, U32>, _) = key.split();
+        fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey {
+            let (sk, _pk): (Bytes<U32>, _) = (*key).split();
             SigningKey(ed25519_dalek::SigningKey::from_bytes(&sk.into()))
         }
-        fn verifying_key(key: GenericArray<u8, Self::Public>) -> Self::VerifyingKey {
+        fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey {
             VerifyingKey(
-                ed25519_dalek::VerifyingKey::from_bytes(&key.into())
+                ed25519_dalek::VerifyingKey::from_bytes(&(*key).into())
                     .expect("validity of this public key should already be asserted"),
             )
         }
@@ -369,11 +397,14 @@ mod v3 {
     use generic_array::{
         sequence::Split,
         typenum::{U32, U48, U49, U96},
-        GenericArray,
     };
 
-    use crate::local::{GenericCipher, GenericMac, LocalVersion};
-    use crate::{PublicVersion, V3};
+    use crate::public::PublicVersion;
+    use crate::V3;
+    use crate::{
+        local::{GenericCipher, GenericMac, LocalVersion},
+        Bytes,
+    };
 
     pub struct Hash;
     pub struct Cipher;
@@ -387,7 +418,7 @@ mod v3 {
 
         type Stream = ctr::Ctr64BE<aes::Aes256>;
 
-        fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream {
+        fn key_iv_init(pair: Bytes<Self::KeyIvPair>) -> Self::Stream {
             let (key, iv) = pair.split();
             Self::Stream::new(&key, &iv)
         }
@@ -400,26 +431,64 @@ mod v3 {
         type TagSize = U48;
         type Cipher = Cipher;
         type Mac = Hash;
+
+        fn encrypt(
+            key: &Bytes<Self::Local>,
+            encoding_header: &[u8],
+            message: &mut [u8],
+            footer: &[u8],
+            implicit: &[u8],
+        ) -> ([u8; 32], Bytes<Self::TagSize>) {
+            crate::local::generic_encrypt::<Self, _>(
+                key,
+                encoding_header,
+                message,
+                footer,
+                implicit,
+                &mut rand::thread_rng(),
+            )
+        }
+
+        fn decrypt(
+            key: &Bytes<Self::Local>,
+            encoding_header: &[u8],
+            nonce: &[u8],
+            message: &mut [u8],
+            tag: &[u8],
+            footer: &[u8],
+            implicit: &[u8],
+        ) -> Result<(), ()> {
+            crate::local::generic_decrypt::<Self>(
+                key,
+                encoding_header,
+                nonce,
+                message,
+                tag,
+                footer,
+                implicit,
+            )
+        }
     }
 
     pub struct SigningKey(p384::ecdsa::SigningKey);
     pub struct VerifyingKey(p384::ecdsa::VerifyingKey);
+    pub type SignatureDigest = <p384::NistP384 as ecdsa::hazmat::DigestPrimitive>::Digest;
 
-    impl signature::Signer<GenericArray<u8, U96>> for SigningKey {
-        fn try_sign(&self, msg: &[u8]) -> Result<GenericArray<u8, U96>, signature::Error> {
+    impl signature::DigestSigner<SignatureDigest, Bytes<U96>> for SigningKey {
+        fn try_sign_digest(&self, digest: SignatureDigest) -> Result<Bytes<U96>, signature::Error> {
             self.0
-                .try_sign(msg)
+                .try_sign_digest(digest)
                 .map(|x: p384::ecdsa::Signature| x.to_bytes())
         }
     }
-    impl signature::Verifier<GenericArray<u8, U96>> for VerifyingKey {
-        fn verify(
+    impl signature::DigestVerifier<SignatureDigest, Bytes<U96>> for VerifyingKey {
+        fn verify_digest(
             &self,
-            msg: &[u8],
-            signature: &GenericArray<u8, U96>,
+            digest: SignatureDigest,
+            signature: &Bytes<U96>,
         ) -> Result<(), signature::Error> {
             let sig = p384::ecdsa::Signature::from_bytes(signature)?;
-            self.0.verify(msg, &sig)
+            self.0.verify_digest(digest, &sig)
         }
     }
 
@@ -432,16 +501,17 @@ mod v3 {
         type Signature = U96;
         type SigningKey = SigningKey;
         type VerifyingKey = VerifyingKey;
+        type SignatureDigest = SignatureDigest;
 
-        fn signing_key(key: GenericArray<u8, Self::Secret>) -> Self::SigningKey {
+        fn signing_key(key: &Bytes<Self::Secret>) -> Self::SigningKey {
             SigningKey(
-                p384::ecdsa::SigningKey::from_bytes(&key)
+                p384::ecdsa::SigningKey::from_bytes(key)
                     .expect("secret key validity should already be asserted"),
             )
         }
-        fn verifying_key(key: GenericArray<u8, Self::Public>) -> Self::VerifyingKey {
+        fn verifying_key(key: &Bytes<Self::Public>) -> Self::VerifyingKey {
             VerifyingKey(
-                p384::ecdsa::VerifyingKey::from_sec1_bytes(&key)
+                p384::ecdsa::VerifyingKey::from_sec1_bytes(key)
                     .expect("secret key validity should already be asserted"),
             )
         }
@@ -454,35 +524,6 @@ pub struct UnsecuredToken<V, T, M, F = (), E = JsonEncoding> {
     message: M,
     footer: F,
     encoding: E,
-}
-
-impl TokenType for Public {
-    const TOKEN_TYPE: &'static str = "public";
-}
-
-#[cfg(feature = "v4")]
-impl<M> UnsecuredToken<V4, Public, M> {
-    pub fn new_v4_public(message: M) -> Self {
-        Self {
-            version_header: V4,
-            token_type: Public,
-            message,
-            footer: (),
-            encoding: JsonEncoding,
-        }
-    }
-}
-#[cfg(feature = "v3")]
-impl<M> UnsecuredToken<V3, Public, M> {
-    pub fn new_v3_public(message: M) -> Self {
-        Self {
-            version_header: V3,
-            token_type: Public,
-            message,
-            footer: (),
-            encoding: JsonEncoding,
-        }
-    }
 }
 
 impl<V, T, M, E> UnsecuredToken<V, T, M, (), E> {
@@ -519,13 +560,14 @@ pub struct SecuredToken<V, T, F = (), E = JsonEncoding> {
 }
 
 pub type SymmetricKey<V> = Key<V, local::Local>;
-pub type PublicKey<V> = Key<V, Public>;
-pub type SecretKey<V> = Key<V, Secret>;
+pub type PublicKey<V> = Key<V, public::Public>;
+pub type SecretKey<V> = Key<V, public::Secret>;
 
-pub type UnencryptedToken<V, M, F, E> = UnsecuredToken<V, local::Local, M, F, E>;
-pub type EncryptedToken<V, F, E> = SecuredToken<V, local::Local, F, E>;
-pub type UnsignedToken<V, M, F, E> = UnsecuredToken<V, Public, M, F, E>;
-pub type SignedToken<V, F, E> = SecuredToken<V, Public, F, E>;
+pub type UnencryptedToken<V, M, F = (), E = JsonEncoding> =
+    UnsecuredToken<V, local::Local, M, F, E>;
+pub type EncryptedToken<V, F = (), E = JsonEncoding> = SecuredToken<V, local::Local, F, E>;
+pub type UnsignedToken<V, M, F = (), E = JsonEncoding> = UnsecuredToken<V, public::Public, M, F, E>;
+pub type SignedToken<V, F = (), E = JsonEncoding> = SecuredToken<V, public::Public, F, E>;
 
 impl<V: Version, T: TokenType, F, E: PayloadEncoding> fmt::Display for SecuredToken<V, T, F, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
