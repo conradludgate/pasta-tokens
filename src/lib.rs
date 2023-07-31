@@ -51,6 +51,8 @@ pub mod purpose {
     }
 }
 
+pub mod claims;
+
 use purpose::Purpose;
 use serde::{de::DeserializeOwned, Serialize};
 
