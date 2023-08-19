@@ -11,9 +11,26 @@ use rand::Rng;
 use subtle::ConstantTimeEq;
 
 use crate::{
-    Bytes, EncryptedToken, Footer, KeyType, MessageEncoding, PayloadEncoding, SymmetricKey,
-    Purpose, UnencryptedToken, Version,
+    encodings::{MessageEncoding, PayloadEncoding},
+    key::KeyType,
+    version::Version,
+    Bytes, Footer, TokenMetadata,
 };
+
+use super::Purpose;
+
+/// A symmetric key for `local` encrypted tokens
+pub type SymmetricKey<V> = crate::key::Key<V, Local>;
+
+/// An decrypted PASETO.
+pub type DecryptedToken<V, M, F = (), E = crate::Json<()>> =
+    crate::tokens::ValidatedToken<V, Local, M, F, E>;
+/// An encrypted PASETO.
+pub type EncryptedToken<V, F = (), E = crate::Json<()>> =
+    crate::tokens::SecuredToken<V, Local, F, E>;
+/// An unencrypted PASETO.
+pub type UnencryptedToken<V, M, F = (), E = crate::Json<()>> =
+    crate::tokens::TokenBuilder<V, Local, M, F, E>;
 
 /// PASETO local encryption
 ///
@@ -173,14 +190,14 @@ mod v3;
 #[cfg_attr(docsrs, doc(cfg(feature = "v4-local")))]
 mod v4;
 
-impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M, F, E> {
+impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> DecryptedToken<V, M, F, E> {
     fn encrypt_inner(
         self,
         key: &SymmetricKey<V>,
         nonce: [u8; NONCE_LEN],
         implicit_assertions: &[u8],
     ) -> Result<EncryptedToken<V, F, E>, Box<dyn std::error::Error>> {
-        let mut m = self.encoding.encode(&self.message)?;
+        let mut m = self.meta.encoding.encode(&self.message)?;
         let f = self.footer.encode();
 
         let tag = V::encrypt(
@@ -194,15 +211,26 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
         sandwich(&mut m, &nonce, &tag);
 
         Ok(EncryptedToken {
-            version_header: self.version_header,
-            token_type: self.token_type,
+            meta: self.meta,
             payload: m,
             encoded_footer: f,
             footer: self.footer,
-            encoding: self.encoding,
         })
     }
+}
 
+impl<V: LocalVersion, M> UnencryptedToken<V, M> {
+    /// Create a new [`EncryptedToken`] builder with the given message payload
+    pub fn new(message: M) -> Self {
+        Self(DecryptedToken {
+            meta: TokenMetadata::default(),
+            message,
+            footer: (),
+        })
+    }
+}
+
+impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M, F, E> {
     /// Encrypt the token
     ///
     /// ### Implicit Assertions
@@ -218,7 +246,8 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],
     ) -> Result<EncryptedToken<V, F, E>, Box<dyn std::error::Error>> {
-        self.encrypt_inner(key, rand::thread_rng().gen(), implicit_assertions)
+        self.0
+            .encrypt_inner(key, rand::thread_rng().gen(), implicit_assertions)
     }
 
     #[doc(hidden)]
@@ -229,7 +258,7 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
         nonce: [u8; 32],
         implicit_assertions: &[u8],
     ) -> Result<EncryptedToken<V, F, E>, Box<dyn std::error::Error>> {
-        self.encrypt_inner(key, nonce, implicit_assertions)
+        self.0.encrypt_inner(key, nonce, implicit_assertions)
     }
 }
 
@@ -248,7 +277,7 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
         mut self,
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<UnencryptedToken<V, M, F, E>, Box<dyn std::error::Error>>
+    ) -> Result<DecryptedToken<V, M, F, E>, Box<dyn std::error::Error>>
     where
         E: MessageEncoding<M>,
     {
@@ -265,14 +294,12 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
         )
         .map_err(|_| "decryption error")?;
 
-        let message = self.encoding.decode(m)?;
+        let message = self.meta.encoding.decode(m)?;
 
-        Ok(UnencryptedToken {
-            version_header: self.version_header,
-            token_type: self.token_type,
+        Ok(DecryptedToken {
+            meta: self.meta,
             message,
             footer: self.footer,
-            encoding: self.encoding,
         })
     }
 }

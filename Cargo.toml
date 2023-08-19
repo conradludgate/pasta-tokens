@@ -42,15 +42,16 @@ cipher = "0.4.4"
 digest = { version = "0.10.7", features = ["mac"] }
 rand = "0.8.5"
 signature = "2.0.0"
+time = "0.3"
 
 # V4
 chacha20 = { version = "0.9.1", optional = true }
 blake2 = { version = "0.10.6", optional = true }
-ed25519-dalek = { version = "=2.0.0-rc.3", features = [
+ed25519-dalek = { version = "2.0.0", features = [
   "hazmat",
   "digest",
 ], optional = true }
-curve25519-dalek = { version = "=4.0.0-rc.3", optional = true }
+curve25519-dalek = { version = "4.0.0", optional = true }
 
 # V3
 aes = { version = "0.8.2", optional = true }

@@ -1,10 +1,9 @@
 use std::fs;
 
 use libtest_mimic::{Arguments, Failed, Trial};
-use pasta_tokens::{
-    purpose::{local::LocalVersion, public::PublicVersion},
-    EncryptedToken, PublicKey, SecretKey, SignedToken, SymmetricKey, V3, V4,
-};
+use pasta_tokens::purpose::local::{EncryptedToken, LocalVersion, SymmetricKey, UnencryptedToken};
+use pasta_tokens::purpose::public::{PublicKey, PublicVersion, SecretKey, SignedToken};
+use pasta_tokens::version::{V3, V4};
 // use rusty_paserk::{
 //     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
 //     Key, KeyId, KeyType, Local, PasetoError, PieWrappedKey, PlaintextKey, Public, PwWrappedKey,
@@ -115,15 +114,17 @@ impl PasetoTest {
                 let token: EncryptedToken<V, Vec<u8>> = token_str.parse().unwrap();
                 assert_eq!(token.footer(), footer.as_bytes());
 
-                let token = token
+                let decrypted_token = token
                     .decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes())
                     .unwrap();
 
                 let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
-                assert_eq!(token.message, payload);
+                assert_eq!(decrypted_token.message, payload);
 
                 let nonce = hex::decode(nonce).unwrap().try_into().unwrap();
-                let token = token
+
+                let token = UnencryptedToken::new(decrypted_token.message)
+                    .with_footer(decrypted_token.footer)
                     .encrypt_with_nonce(&key, nonce, implicit_assertion.as_bytes())
                     .unwrap();
 

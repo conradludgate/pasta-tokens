@@ -1,22 +1,117 @@
 //! PASETO Claims and validators
 
-use std::marker::PhantomData;
+use std::borrow::Cow;
 
 use serde::{
-    de::{DeserializeSeed, MapAccess, Visitor},
-    Deserialize, Deserializer,
+    de::{self, DeserializeSeed, MapAccess, Visitor},
+    forward_to_deserialize_any, Deserialize, Deserializer,
 };
+use time::OffsetDateTime;
 
-pub trait Validator {
-    fn validate(&self, claim: &str, value: &str);
+pub enum PasetoValueType {
+    String,
+    DateTime,
+}
+pub enum PasetoValue<'a> {
+    String(&'a str),
+    DateTime(OffsetDateTime),
 }
 
-/// PASETO Claims deserializer
-///
-/// forwards deserialization to the inner, but also extracts out relevant registered claims
-struct ClaimsDe<D>(D);
+pub trait Validator {
+    fn validates_claim(&self, field: &str) -> Option<PasetoValueType>;
+    #[allow(clippy::result_unit_err)]
+    fn validate(&self, field: &str, value: PasetoValue<'_>) -> Result<(), ()>;
+}
 
-impl<'de, D> Deserializer<'de> for ClaimsDe<D>
+pub const ISSUER: &str = "iss";
+pub const SUBJECT: &str = "sub";
+pub const AUDIENCE: &str = "aud";
+pub const EXPIRATION: &str = "exp";
+pub const NOT_BEFORE: &str = "nbf";
+pub const ISSUED_AT: &str = "iat";
+pub const TOKEN_IDENTIFIER: &str = "jti";
+
+pub struct NotExpired(pub OffsetDateTime);
+
+impl Validator for NotExpired {
+    fn validates_claim(&self, field: &str) -> Option<PasetoValueType> {
+        const FIELDS: &[&str] = &[EXPIRATION];
+        FIELDS.contains(&field).then_some(PasetoValueType::DateTime)
+    }
+
+    fn validate(&self, field: &str, value: PasetoValue<'_>) -> Result<(), ()> {
+        enum Order {
+            LessThan,
+            GreaterThan,
+        }
+
+        let order = match field {
+            EXPIRATION => Order::LessThan,
+            NOT_BEFORE => Order::GreaterThan,
+            ISSUED_AT => Order::GreaterThan,
+            _ => return Ok(()),
+        };
+
+        let dt = match value {
+            PasetoValue::DateTime(dt) => dt,
+            _ => return Err(()),
+        };
+
+        let valid = match order {
+            Order::LessThan => self.0 <= dt,
+            Order::GreaterThan => self.0 >= dt,
+        };
+
+        if valid {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+pub struct ValidAt(pub OffsetDateTime);
+
+impl Validator for ValidAt {
+    fn validates_claim(&self, field: &str) -> Option<PasetoValueType> {
+        const FIELDS: &[&str] = &[EXPIRATION, NOT_BEFORE, ISSUED_AT];
+        FIELDS.contains(&field).then_some(PasetoValueType::DateTime)
+    }
+
+    fn validate(&self, field: &str, value: PasetoValue<'_>) -> Result<(), ()> {
+        enum Order {
+            LessThan,
+            GreaterThan,
+        }
+
+        let order = match field {
+            EXPIRATION => Order::LessThan,
+            NOT_BEFORE => Order::GreaterThan,
+            ISSUED_AT => Order::GreaterThan,
+            _ => return Ok(()),
+        };
+
+        let dt = match value {
+            PasetoValue::DateTime(dt) => dt,
+            _ => return Err(()),
+        };
+
+        let valid = match order {
+            Order::LessThan => self.0 <= dt,
+            Order::GreaterThan => self.0 >= dt,
+        };
+
+        if valid {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+/// Only deserializes maps
+struct MapDeserializer<D>(D);
+
+impl<'de, D> Deserializer<'de> for MapDeserializer<D>
 where
     D: Deserializer<'de>,
 {
@@ -26,237 +121,359 @@ where
     where
         V: Visitor<'de>,
     {
-        self.0.deserialize_any(PasetoClaimVisitor(visitor))
+        self.0.deserialize_map(MapVisitor(visitor))
     }
 
-    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_bool(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_i8(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_i16(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_i32(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_i64(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_u8(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_u16(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_u32(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_u64(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_f32(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_f64(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_char(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        dbg!("deserialize_str");
-        self.0.deserialize_str(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        dbg!("deserialize_string");
-        self.0.deserialize_string(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_bytes(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_byte_buf(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_option(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_unit(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_unit_struct<V>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0
-            .deserialize_unit_struct(name, PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_newtype_struct<V>(
-        self,
-        name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0
-            .deserialize_newtype_struct(name, PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_seq(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_tuple(len, PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_tuple_struct<V>(
-        self,
-        name: &'static str,
-        len: usize,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0
-            .deserialize_tuple_struct(name, len, PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_map(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        name: &'static str,
-        fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0
-            .deserialize_struct(name, fields, PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        name: &'static str,
-        variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0
-            .deserialize_enum(name, variants, PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_identifier(PasetoClaimVisitor(visitor))
-    }
-
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: Visitor<'de>,
-    {
-        self.0.deserialize_ignored_any(PasetoClaimVisitor(visitor))
+    forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct tuple_struct map
+        seq tuple struct enum identifier ignored_any
     }
 }
 
-impl<'de, Ds> DeserializeSeed<'de> for ClaimsDe<Ds>
+/// Only visits maps
+struct MapVisitor<V>(V);
+
+impl<'de, V> Visitor<'de> for MapVisitor<V>
+where
+    V: Visitor<'de>,
+{
+    type Value = V::Value;
+
+    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        self.0.visit_map(ClaimsDe {
+            inner: map,
+            key: None,
+        })
+    }
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.0.expecting(formatter)
+    }
+}
+
+/// Only deserializes strs
+struct StrDeserializer<'a, 'de, D> {
+    inner: D,
+    output: &'a mut Option<Cow<'de, str>>,
+}
+
+impl<'a, 'de, D> Deserializer<'de> for StrDeserializer<'a, 'de, D>
+where
+    D: Deserializer<'de>,
+{
+    type Error = D::Error;
+
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+    where
+        V: Visitor<'de>,
+    {
+        self.inner.deserialize_str(StrVisitor {
+            inner: visitor,
+            output: self.output,
+        })
+    }
+
+    forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+        bytes byte_buf option unit unit_struct newtype_struct tuple_struct map
+        seq tuple struct enum identifier ignored_any
+    }
+}
+
+/// Only deserializes strs
+struct StrVisitor<'a, 'de, V> {
+    inner: V,
+    output: &'a mut Option<Cow<'de, str>>,
+}
+
+impl<'a, 'de: 'a, V> Visitor<'de> for StrVisitor<'a, 'de, V>
+where
+    V: Visitor<'de>,
+{
+    type Value = V::Value;
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        *self.output = Some(v.to_owned().into());
+        self.inner.visit_str(v)
+    }
+
+    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        *self.output = Some(v.into());
+        self.inner.visit_borrowed_str(v)
+    }
+
+    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        *self.output = Some(v.clone().into());
+        self.inner.visit_string(v)
+    }
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.inner.expecting(formatter)
+    }
+}
+
+/// PASETO Claims deserializer
+///
+/// forwards deserialization to the inner, but also extracts out relevant registered claims
+struct ClaimsDe<'de, D> {
+    inner: D,
+    key: Option<Cow<'de, str>>,
+}
+
+// impl<'de, D> Deserializer<'de> for ClaimsDe<D>
+// where
+//     D: Deserializer<'de>,
+// {
+//     type Error = D::Error;
+
+//     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_any(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_bool(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_i8(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_i16(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_i32(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_i64(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_u8(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_u16(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_u32(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_u64(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_f32(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_f64(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_char(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         dbg!("deserialize_str");
+//         self.0.deserialize_str(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         dbg!("deserialize_string");
+//         self.0.deserialize_string(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_bytes(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_byte_buf(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_option(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_unit(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_unit_struct<V>(
+//         self,
+//         name: &'static str,
+//         visitor: V,
+//     ) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0
+//             .deserialize_unit_struct(name, PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_newtype_struct<V>(
+//         self,
+//         name: &'static str,
+//         visitor: V,
+//     ) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0
+//             .deserialize_newtype_struct(name, PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_seq(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_tuple(len, PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_tuple_struct<V>(
+//         self,
+//         name: &'static str,
+//         len: usize,
+//         visitor: V,
+//     ) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0
+//             .deserialize_tuple_struct(name, len, PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_map(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_struct<V>(
+//         self,
+//         name: &'static str,
+//         fields: &'static [&'static str],
+//         visitor: V,
+//     ) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0
+//             .deserialize_struct(name, fields, PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_enum<V>(
+//         self,
+//         name: &'static str,
+//         variants: &'static [&'static str],
+//         visitor: V,
+//     ) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0
+//             .deserialize_enum(name, variants, PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_identifier(PasetoClaimVisitor(visitor))
+//     }
+
+//     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
+//     where
+//         V: Visitor<'de>,
+//     {
+//         self.0.deserialize_ignored_any(PasetoClaimVisitor(visitor))
+//     }
+// }
+
+impl<'a, 'de, Ds> DeserializeSeed<'de> for StrDeserializer<'a, 'de, Ds>
 where
     Ds: DeserializeSeed<'de>,
 {
@@ -266,23 +483,14 @@ where
     where
         D: Deserializer<'de>,
     {
-        self.0.deserialize(ClaimsDe(deserializer))
+        self.inner.deserialize(StrDeserializer {
+            inner: deserializer,
+            output: self.output,
+        })
     }
 }
 
-impl<'de, D> Deserialize<'de> for ClaimsDe<D>
-where
-    D: Deserialize<'de>,
-{
-    fn deserialize<De>(deserializer: De) -> Result<Self, De::Error>
-    where
-        De: Deserializer<'de>,
-    {
-        D::deserialize(ClaimsDe(deserializer)).map(Self)
-    }
-}
-
-impl<'de, D> MapAccess<'de> for ClaimsDe<D>
+impl<'de, D> MapAccess<'de> for ClaimsDe<'de, D>
 where
     D: MapAccess<'de>,
 {
@@ -292,257 +500,38 @@ where
     where
         K: serde::de::DeserializeSeed<'de>,
     {
-        dbg!("next_key_seed");
-        self.0.next_key_seed(ClaimsDe(seed))
+        if self.key.is_some() {
+            return Err(de::Error::custom("map deserialize in an invalid state"));
+        }
+        self.inner.next_key_seed(StrDeserializer {
+            inner: seed,
+            output: &mut self.key,
+        })
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::DeserializeSeed<'de>,
     {
-        dbg!("next_value_seed");
-        self.0.next_value_seed(ClaimsDe(seed))
-    }
-
-    fn next_entry_seed<K, V>(
-        &mut self,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Option<(K::Value, V::Value)>, Self::Error>
-    where
-        K: serde::de::DeserializeSeed<'de>,
-        V: serde::de::DeserializeSeed<'de>,
-    {
-        dbg!("next_entry_seed");
-        self.0.next_entry_seed(ClaimsDe(kseed), ClaimsDe(vseed))
-    }
-
-    fn next_key<K>(&mut self) -> Result<Option<K>, Self::Error>
-    where
-        K: Deserialize<'de>,
-    {
-        dbg!("next_key");
-        self.0.next_key().map(|x| x.map(|ClaimsDe(x)| x))
-    }
-
-    fn next_value<V>(&mut self) -> Result<V, Self::Error>
-    where
-        V: Deserialize<'de>,
-    {
-        dbg!("next_value");
-        self.0.next_value().map(|ClaimsDe(x)| x)
-    }
-
-    fn next_entry<K, V>(&mut self) -> Result<Option<(K, V)>, Self::Error>
-    where
-        K: Deserialize<'de>,
-        V: Deserialize<'de>,
-    {
-        dbg!("next_entry");
-        self.0
-            .next_entry()
-            .map(|x| x.map(|(ClaimsDe(k), ClaimsDe(v))| (k, v)))
+        dbg!(self.key.as_deref());
+        if let Some(key) = self.key.take() {
+            todo!()
+        } else {
+            self.inner.next_value_seed(seed)
+        }
     }
 
     fn size_hint(&self) -> Option<usize> {
-        self.0.size_hint()
-    }
-}
-
-struct PasetoClaimVisitor<V>(V);
-
-impl<'de, V> Visitor<'de> for PasetoClaimVisitor<V>
-where
-    V: Visitor<'de>,
-{
-    type Value = V::Value;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        self.0.expecting(formatter)
-    }
-
-    fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_bool(v)
-    }
-
-    fn visit_i8<E>(self, v: i8) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_i8(v)
-    }
-
-    fn visit_i16<E>(self, v: i16) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_i16(v)
-    }
-
-    fn visit_i32<E>(self, v: i32) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_i32(v)
-    }
-
-    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_i64(v)
-    }
-
-    fn visit_u8<E>(self, v: u8) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_u8(v)
-    }
-
-    fn visit_u16<E>(self, v: u16) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_u16(v)
-    }
-
-    fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_u32(v)
-    }
-
-    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_u64(v)
-    }
-
-    fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_f32(v)
-    }
-
-    fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_f64(v)
-    }
-
-    fn visit_char<E>(self, v: char) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_char(v)
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        println!("visit_str {v:?}");
-        self.0.visit_str(v)
-    }
-
-    fn visit_borrowed_str<E>(self, v: &'de str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        println!("visit_borrowed_str {v:?}");
-        self.0.visit_borrowed_str(v)
-    }
-
-    fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        println!("visit_string {v:?}");
-        self.0.visit_string(v)
-    }
-
-    fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_bytes(v)
-    }
-
-    fn visit_borrowed_bytes<E>(self, v: &'de [u8]) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_borrowed_bytes(v)
-    }
-
-    fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_byte_buf(v)
-    }
-
-    fn visit_none<E>(self) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_none()
-    }
-
-    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        self.0.visit_some(deserializer)
-    }
-
-    fn visit_unit<E>(self) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        self.0.visit_unit()
-    }
-
-    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        self.0.visit_newtype_struct(deserializer)
-    }
-
-    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::SeqAccess<'de>,
-    {
-        self.0.visit_seq(seq)
-    }
-
-    fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        dbg!("visit_map");
-        self.0.visit_map(ClaimsDe(map))
-    }
-
-    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::EnumAccess<'de>,
-    {
-        self.0.visit_enum(data)
+        self.inner.size_hint()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use serde::Deserialize;
+
+    use crate::claims::MapDeserializer;
+
     use super::ClaimsDe;
 
     #[test]
@@ -555,7 +544,9 @@ mod tests {
             }
         }"#;
 
-        let ClaimsDe(y): ClaimsDe<serde_json::Value> = serde_json::from_str(x).unwrap();
+        let mut de = serde_json::Deserializer::from_str(x);
+        let de = MapDeserializer(&mut de);
+        let y = serde_json::Value::deserialize(de).unwrap();
         dbg!(y);
     }
 }

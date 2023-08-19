@@ -3,8 +3,9 @@ use generic_array::typenum::{U32, U64};
 use signature::{Signer, Verifier};
 
 use super::{Public, PublicVersion};
-use crate::V4;
-use crate::{Bytes, Purpose, Version};
+use crate::purpose::Purpose;
+use crate::version::{Version, V4};
+use crate::Bytes;
 
 fn preauth(h: &[u8], m: &[u8], f: &[u8], i: &[u8]) -> Vec<u8> {
     let mut message = Vec::new();
@@ -64,15 +65,9 @@ impl PublicVersion for V4 {
     }
 }
 
-impl<M> crate::VerifiedToken<V4, M> {
-    /// Create a new V4 [`SignedToken`]crate::SignedToken) builder with the given message payload
+impl<M> super::UnsignedToken<V4, M> {
+    /// Create a new [`V4`] [`SignedToken`](super::SignedToken) builder with the given message payload
     pub fn new_v4_public(message: M) -> Self {
-        Self {
-            version_header: V4,
-            token_type: super::Public,
-            message,
-            footer: (),
-            encoding: crate::Json(()),
-        }
+        Self::new(message)
     }
 }

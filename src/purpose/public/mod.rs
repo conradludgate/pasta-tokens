@@ -7,9 +7,13 @@ use cipher::Unsigned;
 use generic_array::ArrayLength;
 
 use crate::{
-    Bytes, Footer, KeyType, MessageEncoding, PayloadEncoding, PublicKey, SecretKey, SignedToken,
-    Purpose, VerifiedToken, Version,
+    encodings::{MessageEncoding, PayloadEncoding},
+    key::KeyType,
+    version::Version,
+    Bytes, Footer, TokenMetadata,
 };
+
+use super::Purpose;
 
 /// General information about a PASETO/PASERK version
 pub trait PublicVersion: Version {
@@ -53,6 +57,20 @@ pub struct Public;
 #[derive(Debug)]
 pub struct Secret;
 
+/// A public key for verifying `public` tokens
+pub type PublicKey<V> = crate::key::Key<V, Public>;
+/// A secret key for signing `public` tokens
+pub type SecretKey<V> = crate::key::Key<V, Secret>;
+
+/// A Verified PASETO that has been parsed and verified
+pub type VerifiedToken<V, M, F = (), E = crate::Json<()>> =
+    crate::tokens::ValidatedToken<V, Public, M, F, E>;
+/// A Signed PASETO.
+pub type SignedToken<V, F = (), E = crate::Json<()>> = crate::tokens::SecuredToken<V, Public, F, E>;
+/// A PASETO that is ready to be signed.
+pub type UnsignedToken<V, M, F = (), E = crate::Json<()>> =
+    crate::tokens::TokenBuilder<V, Public, M, F, E>;
+
 impl<V: PublicVersion> KeyType<V> for Public {
     type KeyLen = V::PublicKeySize;
     const KEY_HEADER: &'static str = "public.";
@@ -93,18 +111,27 @@ impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> VerifiedToken<V, M, 
         key: &SecretKey<V>,
         implicit_assertions: &[u8],
     ) -> Result<SignedToken<V, F, E>, Box<dyn std::error::Error>> {
-        let mut m = self.encoding.encode(&self.message)?;
+        let mut m = self.meta.encoding.encode(&self.message)?;
         let f = self.footer.encode();
         let sig = V::sign(&key.key, E::SUFFIX.as_bytes(), &m, &f, implicit_assertions);
         m.extend_from_slice(&sig);
 
         Ok(SignedToken {
-            version_header: self.version_header,
-            token_type: self.token_type,
+            meta: self.meta,
             payload: m,
             encoded_footer: f,
             footer: self.footer,
-            encoding: self.encoding,
+        })
+    }
+}
+
+impl<V: PublicVersion, M> UnsignedToken<V, M> {
+    /// Create a new [`SignedToken`] builder with the given message payload
+    pub fn new(message: M) -> Self {
+        Self(VerifiedToken {
+            meta: TokenMetadata::default(),
+            message,
+            footer: (),
         })
     }
 }
@@ -142,14 +169,12 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
         )
         .map_err(|_| "decryption error")?;
 
-        let message = self.encoding.decode(m)?;
+        let message = self.meta.encoding.decode(m)?;
 
         Ok(VerifiedToken {
-            version_header: self.version_header,
-            token_type: self.token_type,
+            meta: self.meta,
             message,
             footer: self.footer,
-            encoding: self.encoding,
         })
     }
 }

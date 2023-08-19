@@ -5,7 +5,7 @@ use generic_array::{
     ArrayLength,
 };
 
-use crate::{Bytes, UnencryptedToken, V3};
+use crate::{version::V3, Bytes};
 
 use super::{
     generic_decrypt, generic_encrypt, GenericCipher, GenericMac, Kdf, LocalEncryption, LocalVersion,
@@ -77,15 +77,9 @@ impl LocalEncryption for V3 {
     type Mac = Hash;
 }
 
-impl<M> UnencryptedToken<crate::V3, M> {
-    /// Create a new V3 [`EncryptedToken`](crate::EncryptedToken) builder with the given message payload
+impl<M> super::UnencryptedToken<V3, M> {
+    /// Create a new [`V3`] [`EncryptedToken`](super::EncryptedToken) builder with the given message payload
     pub fn new_v3_local(message: M) -> Self {
-        Self {
-            version_header: crate::V3,
-            token_type: super::Local,
-            message,
-            footer: (),
-            encoding: crate::Json(()),
-        }
+        Self::new(message)
     }
 }

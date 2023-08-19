@@ -4,10 +4,10 @@ use signature::DigestVerifier;
 
 use super::Public;
 use super::PublicVersion;
+use crate::purpose::Purpose;
+use crate::version::Version;
+use crate::version::V3;
 use crate::Bytes;
-use crate::Purpose;
-use crate::Version;
-use crate::V3;
 
 pub type SignatureDigest = <p384::NistP384 as ecdsa::hazmat::DigestPrimitive>::Digest;
 
@@ -79,15 +79,9 @@ impl PublicVersion for V3 {
     }
 }
 
-impl<M> crate::VerifiedToken<V3, M> {
-    /// Create a new V3 [`SignedToken`]crate::SignedToken) builder with the given message payload
+impl<M> super::UnsignedToken<V3, M> {
+    /// Create a new [`V3`] [`SignedToken`](super::SignedToken) builder with the given message payload
     pub fn new_v3_public(message: M) -> Self {
-        Self {
-            version_header: V3,
-            token_type: super::Public,
-            message,
-            footer: (),
-            encoding: crate::Json(()),
-        }
+        Self::new(message)
     }
 }

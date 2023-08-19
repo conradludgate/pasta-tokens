@@ -1,8 +1,10 @@
+//! PASETO Keys
+
 use std::fmt;
 
 use generic_array::{ArrayLength, GenericArray};
 
-use crate::Version;
+use crate::version::Version;
 
 /// General information about key types
 pub trait KeyType<V: Version> {
@@ -16,7 +18,7 @@ pub trait KeyType<V: Version> {
 
 /// A PASETO key.
 ///
-/// It is versioned and typed to ensure that [`Local`], [`Public`] and [`Secret`] keys are not used interchangably.
+/// It is [versioned](crate::version) and [typed](crate::purpose) to ensure that keys are not used for different ciphers and purposes.
 pub struct Key<V: Version, K: KeyType<V>> {
     pub(crate) key: GenericArray<u8, K::KeyLen>,
 }
