@@ -259,7 +259,7 @@ impl SealedVersion for V3 {
             .apply_keystream(&mut sealed_key.encrypted_data_key);
 
         Ok(Key {
-            key: sealed_key.encrypted_data_key,
+            key: Box::new(sealed_key.encrypted_data_key),
         })
     }
 }
@@ -297,7 +297,7 @@ impl SealedVersion for V4 {
         };
 
         // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
-        let pk = CompressedEdwardsY(sealing_key.key.into());
+        let pk = CompressedEdwardsY((*sealing_key.key).into());
 
         // step 1: Calculate the birationally-equivalent X25519 public key (xpk) from pk.
         let xpk = pk.decompress().unwrap().to_montgomery();
@@ -415,7 +415,7 @@ impl SealedVersion for V4 {
 
         chacha20::XChaCha20::new(&ek, &n).apply_keystream(&mut sealed_key.encrypted_data_key);
         Ok(Key {
-            key: sealed_key.encrypted_data_key,
+            key: Box::new(sealed_key.encrypted_data_key),
         })
     }
 }

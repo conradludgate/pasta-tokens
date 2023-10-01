@@ -215,7 +215,9 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
 
         <V::Cipher as KeyIvInit>::new(&ek, &self.nonce).apply_keystream(&mut self.edk);
 
-        Ok(Key { key: self.edk })
+        Ok(Key {
+            key: Box::new(self.edk),
+        })
     }
 
     /// Return the password KDF settings that were used to encrypt the key.

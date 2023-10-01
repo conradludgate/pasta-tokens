@@ -25,8 +25,8 @@ default = [
   "v4-pbkw",
   "v3-pke",
   "v4-pke",
-  # "v3-id",
-  # "v4-id",
+  "v3-id",
+  "v4-id",
   # "v3-wrap",
   # "v4-wrap",
 ]
@@ -69,12 +69,11 @@ test = []
 subtle = "2.5.0"
 generic-array = "0.14"
 base64ct = { version = "1.6.0", features = ["alloc"] }
-base64 = "0.13.0"
 cipher = "0.4.4"
 digest = { version = "0.10.7", features = ["mac"] }
 rand = "0.8.5"
 signature = "2.0.0"
-time = "0.3"
+zeroize = { version = "1", features = ["zeroize_derive"] }
 
 # V4
 chacha20 = { version = "0.9.1", optional = true }

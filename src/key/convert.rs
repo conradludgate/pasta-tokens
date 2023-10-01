@@ -22,13 +22,17 @@ impl crate::purpose::public::SecretKey<crate::version::V3> {
     /// ```
     pub fn from_sec1_pem(s: &str) -> Result<Self, PasetoError> {
         let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::InvalidKey)?;
-        Ok(Self { key: sk.to_bytes() })
+        Ok(Self {
+            key: Box::new(sk.to_bytes()),
+        })
     }
 
     /// Decode a secret key from raw bytes
     pub fn from_bytes(s: &[u8]) -> Result<Self, PasetoError> {
         let sk = p384::SecretKey::from_slice(s).map_err(|_| PasetoError::InvalidKey)?;
-        Ok(Self { key: sk.to_bytes() })
+        Ok(Self {
+            key: Box::new(sk.to_bytes()),
+        })
     }
 
     /// Get the corresponding V3 public key for this V3 secret key
@@ -40,7 +44,7 @@ impl crate::purpose::public::SecretKey<crate::version::V3> {
         let pk = pk.compress();
         let pk = pk.as_bytes();
         Key {
-            key: *GenericArray::from_slice(pk),
+            key: Box::new(*GenericArray::from_slice(pk)),
         }
     }
 }
@@ -69,7 +73,7 @@ impl crate::purpose::public::PublicKey<crate::version::V3> {
         let pk = pk.as_bytes();
 
         Ok(Self {
-            key: *GenericArray::from_slice(pk),
+            key: Box::new(*GenericArray::from_slice(pk)),
         })
     }
 
@@ -80,7 +84,7 @@ impl crate::purpose::public::PublicKey<crate::version::V3> {
         let pk = pk.compress();
         let pk = pk.as_bytes();
         Ok(Self {
-            key: *GenericArray::from_slice(pk),
+            key: Box::new(*GenericArray::from_slice(pk)),
         })
     }
 }
@@ -104,7 +108,9 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
             Ok(_) => {}
             Err(_) => return Err(PasetoError::InvalidKey),
         };
-        Ok(Key { key: key.into() })
+        Ok(Key {
+            key: Box::new(key.into()),
+        })
     }
 
     /// Create a new secret key from the byte array
@@ -120,9 +126,11 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
     /// ```
     pub fn from_secret_key(key: [u8; 32]) -> Self {
         Self {
-            key: ed25519_dalek::SigningKey::from_bytes(&key)
-                .to_keypair_bytes()
-                .into(),
+            key: Box::new(
+                ed25519_dalek::SigningKey::from_bytes(&key)
+                    .to_keypair_bytes()
+                    .into(),
+            ),
         }
     }
 
@@ -130,7 +138,7 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
     pub fn public_key(&self) -> crate::purpose::public::PublicKey<crate::version::V4> {
         use generic_array::sequence::Split;
         let (_sk, pk): (GenericArray<u8, generic_array::typenum::U32>, _) = self.key.split();
-        Key { key: pk }
+        Key { key: Box::new(pk) }
     }
 }
 
@@ -151,7 +159,9 @@ impl crate::purpose::public::PublicKey<crate::version::V4> {
         let _ =
             ed25519_dalek::VerifyingKey::from_bytes(&key).map_err(|_| PasetoError::InvalidKey)?;
 
-        Ok(Self { key: key.into() })
+        Ok(Self {
+            key: Box::new(key.into()),
+        })
     }
 }
 
@@ -159,11 +169,13 @@ impl crate::purpose::public::PublicKey<crate::version::V4> {
 impl crate::purpose::local::SymmetricKey<crate::version::V3> {
     /// Create a V3 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
-        Self { key: key.into() }
+        Self {
+            key: Box::new(key.into()),
+        }
     }
     /// Get the raw bytes from this key
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.key.into()
+        (*self.key).into()
     }
 }
 
@@ -171,11 +183,13 @@ impl crate::purpose::local::SymmetricKey<crate::version::V3> {
 impl crate::purpose::local::SymmetricKey<crate::version::V4> {
     /// Create a V4 local key from raw bytes
     pub fn from_bytes(key: [u8; 32]) -> Self {
-        Self { key: key.into() }
+        Self {
+            key: Box::new(key.into()),
+        }
     }
     /// Get the raw bytes from this key
     pub fn to_bytes(&self) -> [u8; 32] {
-        self.key.into()
+        (*self.key).into()
     }
 }
 
@@ -196,7 +210,7 @@ impl<V: crate::purpose::local::LocalVersion> crate::purpose::local::SymmetricKey
     pub fn new_random(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         let mut key = GenericArray::<u8, V::KeySize>::default();
         rng.fill_bytes(&mut key);
-        Self { key }
+        Self { key: Box::new(key) }
     }
 }
 
@@ -212,9 +226,11 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
         let mut key = [0; 32];
         rng.fill_bytes(&mut key);
         Self {
-            key: ed25519_dalek::SigningKey::from_bytes(&key)
-                .to_keypair_bytes()
-                .into(),
+            key: Box::new(
+                ed25519_dalek::SigningKey::from_bytes(&key)
+                    .to_keypair_bytes()
+                    .into(),
+            ),
         }
     }
 }
@@ -229,7 +245,7 @@ impl crate::purpose::public::SecretKey<crate::version::V3> {
     /// Generate a random V3 secret key using the provided random source
     pub fn new_random(rng: &mut (impl RngCore + CryptoRng)) -> Self {
         Self {
-            key: p384::SecretKey::random(rng).to_bytes(),
+            key: Box::new(p384::SecretKey::random(rng).to_bytes()),
         }
     }
 }

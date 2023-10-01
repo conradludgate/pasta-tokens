@@ -2,8 +2,9 @@ use std::fs;
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use pasta_tokens::{
-    key::Key,
+    key::{Key, KeyType},
     paserk::{
+        id::KeyId,
         pbkw::{PwVersion, PwWrapType, PwWrappedKey},
         pke::{SealedKey, SealedVersion},
     },
@@ -11,7 +12,7 @@ use pasta_tokens::{
         local::Local,
         public::{Public, Secret},
     },
-    version::{V3, V4},
+    version::{Version, V3, V4},
     PasetoError,
 };
 // use pasta_tokens::{
@@ -26,7 +27,7 @@ fn main() {
 
     let mut tests = vec![];
 
-    // IdTest::add_all_tests(&mut tests);
+    IdTest::add_all_tests(&mut tests);
     // KeyTest::add_all_tests(&mut tests);
     PbkwTest::add_all_tests(&mut tests);
     PkeTest::add_all_tests(&mut tests);
@@ -53,53 +54,53 @@ struct Test<T> {
     test_data: T,
 }
 
-// #[derive(Deserialize)]
-// struct IdTest {
-//     paserk: Option<String>,
-//     key: String,
-// }
+#[derive(Deserialize)]
+struct IdTest {
+    paserk: Option<String>,
+    key: String,
+}
 
-// impl IdTest {
-//     fn add_all_tests(tests: &mut Vec<Trial>) {
-//         Self::add_tests::<V3, Local>(tests);
-//         Self::add_tests::<V4, Local>(tests);
-//         Self::add_tests::<V3, Secret>(tests);
-//         Self::add_tests::<V4, Secret>(tests);
-//         Self::add_tests::<V3, Public>(tests);
-//         Self::add_tests::<V4, Public>(tests);
-//     }
+impl IdTest {
+    fn add_all_tests(tests: &mut Vec<Trial>) {
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
+        Self::add_tests::<V3, Public>(tests);
+        Self::add_tests::<V4, Public>(tests);
+    }
 
-//     fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
-//     where
-//         Key<V, K>: NewKey,
-//         KeyId<V, K>: From<Key<V, K>>,
-//     {
-//         let test_file: TestFile<Self> = read_test(&format!("{}{}json", V::KEY_HEADER, K::ID));
-//         for test in test_file.tests {
-//             tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
-//         }
-//     }
+    fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
+    where
+        Key<V, K>: NewKey,
+        KeyId<V, K>: From<Key<V, K>>,
+    {
+        let test_file: TestFile<Self> = read_test(&format!("{}.{}json", V::PASERK_HEADER, K::ID));
+        for test in test_file.tests {
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
+        }
+    }
 
-//     fn test<V: Version, K: KeyType<V>>(self) -> Result<(), Failed>
-//     where
-//         Key<V, K>: NewKey,
-//         KeyId<V, K>: From<Key<V, K>>,
-//     {
-//         if let Some(paserk) = self.paserk {
-//             let key = Key::<V, K>::from_key(&self.key);
-//             let kid: KeyId<V, K> = key.to_id();
-//             let kid2: KeyId<V, K> = paserk.parse().unwrap();
+    fn test<V: Version, K: KeyType<V>>(self) -> Result<(), Failed>
+    where
+        Key<V, K>: NewKey,
+        KeyId<V, K>: From<Key<V, K>>,
+    {
+        if let Some(paserk) = self.paserk {
+            let key = Key::<V, K>::from_key(&self.key);
+            let kid: KeyId<V, K> = key.to_id();
+            let kid2: KeyId<V, K> = paserk.parse().unwrap();
 
-//             if kid != kid2 {
-//                 return Err("decode failed".into());
-//             }
-//             if kid.to_string() != paserk {
-//                 return Err("encode failed".into());
-//             }
-//         }
-//         Ok(())
-//     }
-// }
+            if kid != kid2 {
+                return Err("decode failed".into());
+            }
+            if kid.to_string() != paserk {
+                return Err("encode failed".into());
+            }
+        }
+        Ok(())
+    }
+}
 
 // #[derive(Deserialize)]
 // struct KeyTest {
@@ -175,11 +176,8 @@ impl PbkwTest {
     }
 
     fn add_tests<V: PwVersion, K: PwWrapType<V>>(tests: &mut Vec<Trial>) {
-        let test_file: TestFile<Self> = read_test(&dbg!(format!(
-            "{}.{}json",
-            V::PASERK_HEADER,
-            K::WRAP_HEADER
-        )));
+        let test_file: TestFile<Self> =
+            read_test(&format!("{}.{}json", V::PASERK_HEADER, K::WRAP_HEADER));
         for test in test_file.tests {
             tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
         }

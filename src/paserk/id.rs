@@ -1,6 +1,6 @@
 use std::{fmt, marker::PhantomData, str::FromStr};
 
-use base64::URL_SAFE_NO_PAD;
+use base64ct::Encoding;
 use generic_array::{typenum::U33, GenericArray};
 
 use crate::{
@@ -9,10 +9,12 @@ use crate::{
     PasetoError,
 };
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-id")]
 use crate::version::V3;
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-id")]
 use crate::version::V4;
+
+use super::write_b64;
 
 /// Unique ID for a key
 ///
@@ -50,7 +52,8 @@ impl<V: Version, K: KeyType<V>> fmt::Debug for KeyId<V, K> {
 }
 impl<V: Version, K: KeyType<V>> fmt::Display for KeyId<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(V::KEY_HEADER)?;
+        f.write_str(V::PASERK_HEADER)?;
+        f.write_str(".")?;
         f.write_str(K::ID)?;
         write_b64(&self.id, f)
     }
@@ -61,16 +64,18 @@ impl<V: Version, K: KeyType<V>> FromStr for KeyId<V, K> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s
-            .strip_prefix(V::KEY_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
-        let s = s.strip_prefix(K::ID).ok_or(PasetoError::WrongHeader)?;
+            .strip_prefix(V::PASERK_HEADER)
+            .ok_or(PasetoError::InvalidToken)?;
+        let s = s.strip_prefix('.').ok_or(PasetoError::InvalidToken)?;
+        let s = s.strip_prefix(K::ID).ok_or(PasetoError::InvalidToken)?;
 
         let mut id = GenericArray::<u8, U33>::default();
-        let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut id)?;
+        let len = base64ct::Base64UrlUnpadded::decode(s, &mut id)
+            .map_err(|_| PasetoError::Base64DecodeError)?
+            .len();
+        // let len = base64::decode_config_slice(s, URL_SAFE_NO_PAD, &mut id)?;
         if len != 33 {
-            return Err(PasetoError::PayloadBase64Decode {
-                source: base64::DecodeError::InvalidLength,
-            });
+            return Err(PasetoError::Base64DecodeError);
         }
 
         Ok(KeyId {
@@ -123,10 +128,10 @@ where
     }
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-id")]
 impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {
     fn from(key: Key<V3, K>) -> Self {
-        use base64ct::{Base64UrlUnpadded, Encoding};
+        use base64ct::Base64UrlUnpadded;
         use sha2::digest::Digest;
 
         // V3 Public keys are 49 bytes, V3 private keys are 48 bytes, symmetric keys are 32 bytes.
@@ -135,10 +140,12 @@ impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {
         let p = Base64UrlUnpadded::encode(key.as_ref(), &mut output).unwrap();
 
         let mut derive_d = sha2::Sha384::new();
-        derive_d.update(V3::KEY_HEADER);
+        derive_d.update(V3::PASERK_HEADER);
+        derive_d.update(b".");
         derive_d.update(K::ID);
-        derive_d.update(V3::KEY_HEADER);
-        derive_d.update(K::HEADER);
+        derive_d.update(V3::PASERK_HEADER);
+        derive_d.update(b".");
+        derive_d.update(K::KEY_HEADER);
         derive_d.update(p);
         let d = derive_d.finalize();
         let id = *GenericArray::from_slice(&d[..33]);
@@ -150,10 +157,10 @@ impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-id")]
 impl<K: KeyType<V4>> From<Key<V4, K>> for KeyId<V4, K> {
     fn from(key: Key<V4, K>) -> Self {
-        use base64ct::{Base64UrlUnpadded, Encoding};
+        use base64ct::Base64UrlUnpadded;
         use blake2::digest::Digest;
 
         // V4 Public keys are 64 bytes, symmetric keys are 32 bytes.
@@ -162,10 +169,12 @@ impl<K: KeyType<V4>> From<Key<V4, K>> for KeyId<V4, K> {
         let p = Base64UrlUnpadded::encode(key.as_ref(), &mut output).unwrap();
 
         let mut derive_d = blake2::Blake2b::<U33>::new();
-        derive_d.update(V4::KEY_HEADER);
+        derive_d.update(V4::PASERK_HEADER);
+        derive_d.update(b".");
         derive_d.update(K::ID);
-        derive_d.update(V4::KEY_HEADER);
-        derive_d.update(K::HEADER);
+        derive_d.update(V4::PASERK_HEADER);
+        derive_d.update(b".");
+        derive_d.update(K::KEY_HEADER);
         derive_d.update(p);
         let id = derive_d.finalize();
 
