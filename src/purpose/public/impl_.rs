@@ -4,7 +4,7 @@ use generic_array::ArrayLength;
 use crate::{
     encodings::{MessageEncoding, PayloadEncoding},
     version::Version,
-    Bytes, Footer, TokenMetadata,
+    Bytes, Footer, PasetoError, TokenMetadata,
 };
 
 use super::{PublicKey, SecretKey, SignedToken, UnsignedToken, VerifiedToken};
@@ -54,8 +54,13 @@ impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, 
         self,
         key: &SecretKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<SignedToken<V, F, E>, Box<dyn std::error::Error>> {
-        let mut m = self.0.meta.encoding.encode(&self.0.message)?;
+    ) -> Result<SignedToken<V, F, E>, PasetoError> {
+        let mut m = self
+            .0
+            .meta
+            .encoding
+            .encode(&self.0.message)
+            .map_err(PasetoError::PayloadError)?;
         let f = self.0.footer.encode();
         let sig = V::sign(&key.key, E::SUFFIX.as_bytes(), &m, &f, implicit_assertions);
         m.extend_from_slice(&sig);
@@ -95,7 +100,7 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
         self,
         key: &PublicKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<VerifiedToken<V, M, F, E>, Box<dyn std::error::Error>>
+    ) -> Result<VerifiedToken<V, M, F, E>, PasetoError>
     where
         E: MessageEncoding<M>,
     {
@@ -111,9 +116,13 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
             implicit_assertions,
             sig.into(),
         )
-        .map_err(|_| "decryption error")?;
+        .map_err(|_| PasetoError::CryptoError)?;
 
-        let message = self.meta.encoding.decode(m)?;
+        let message = self
+            .meta
+            .encoding
+            .decode(m)
+            .map_err(PasetoError::PayloadError)?;
 
         Ok(VerifiedToken {
             meta: self.meta,

@@ -341,7 +341,9 @@ pub mod tokens {
 
     use base64ct::Encoding;
 
-    use crate::{encodings::PayloadEncoding, purpose, version, Footer, Json, TokenMetadata};
+    use crate::{
+        encodings::PayloadEncoding, purpose, version, Footer, Json, PasetoError, TokenMetadata,
+    };
 
     /// A validated token.
     ///
@@ -440,27 +442,30 @@ pub mod tokens {
     impl<V: version::Version, T: purpose::Purpose, F: Footer, E: PayloadEncoding> std::str::FromStr
         for SecuredToken<V, T, F, E>
     {
-        type Err = ();
+        type Err = PasetoError;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
-            let s = s.strip_prefix(V::PASETO_HEADER).ok_or(())?;
-            let s = s.strip_prefix(E::SUFFIX).ok_or(())?;
-            let s = s.strip_prefix('.').ok_or(())?;
-            let s = s.strip_prefix(T::HEADER).ok_or(())?;
-            let s = s.strip_prefix('.').ok_or(())?;
+            let s = s
+                .strip_prefix(V::PASETO_HEADER)
+                .ok_or(PasetoError::InvalidToken)?;
+            let s = s.strip_prefix(E::SUFFIX).ok_or(PasetoError::InvalidToken)?;
+            let s = s.strip_prefix('.').ok_or(PasetoError::InvalidToken)?;
+            let s = s.strip_prefix(T::HEADER).ok_or(PasetoError::InvalidToken)?;
+            let s = s.strip_prefix('.').ok_or(PasetoError::InvalidToken)?;
 
             let (payload, footer) = match s.split_once('.') {
                 Some((payload, footer)) => (payload, Some(footer)),
                 None => (s, None),
             };
 
-            let payload = base64ct::Base64UrlUnpadded::decode_vec(payload).map_err(|_| ())?;
+            let payload = base64ct::Base64UrlUnpadded::decode_vec(payload)
+                .map_err(|_| PasetoError::Base64DecodeError)?;
             let encoded_footer = footer
                 .map(base64ct::Base64UrlUnpadded::decode_vec)
                 .transpose()
-                .map_err(|_| ())?
+                .map_err(|_| PasetoError::Base64DecodeError)?
                 .unwrap_or_default();
-            let footer = F::decode(&encoded_footer).map_err(|_| ())?;
+            let footer = F::decode(&encoded_footer).map_err(PasetoError::PayloadError)?;
 
             Ok(Self {
                 meta: TokenMetadata::default(),
@@ -491,11 +496,18 @@ pub enum PasetoError {
     InvalidToken,
     /// Could not verify/decrypt the PASETO/PASERK.
     CryptoError,
-    // /// There was an error with payload processing
-    // PayloadError(Box<dyn std::error::Error>),
+    /// There was an error with payload processing
+    PayloadError(Box<dyn std::error::Error>),
 }
 
-impl std::error::Error for PasetoError {}
+impl std::error::Error for PasetoError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            PasetoError::PayloadError(x) => Some(&**x),
+            _ => None,
+        }
+    }
+}
 
 impl std::fmt::Display for PasetoError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -504,6 +516,9 @@ impl std::fmt::Display for PasetoError {
             PasetoError::InvalidKey => f.write_str("Could not parse the key"),
             PasetoError::InvalidToken => f.write_str("Could not parse the token"),
             PasetoError::CryptoError => f.write_str("Token signature could not be validated"),
+            PasetoError::PayloadError(x) => {
+                write!(f, "there was an error with the payload encoding: {x}")
+            }
         }
     }
 }

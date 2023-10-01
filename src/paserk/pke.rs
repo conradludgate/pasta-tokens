@@ -5,27 +5,35 @@
 
 use std::{fmt, str::FromStr};
 
-use cipher::{inout::InOutBuf, KeyIvInit, StreamCipher};
-use digest::{Digest, Mac};
 use generic_array::{
-    sequence::{Concat, Split},
-    ArrayLength, GenericArray,
+    // sequence::{Concat, Split},
+    ArrayLength,
+    GenericArray,
 };
 use rand::{rngs::OsRng, CryptoRng, RngCore};
-use subtle::ConstantTimeEq;
 
-#[cfg(feature = "v3-pke")]
-use crate::version::V3;
-#[cfg(feature = "v4-pke")]
-use crate::version::V4;
 use crate::{
     key::Key,
     purpose::{
         local::{Local, LocalVersion},
         public::{Public, PublicVersion, Secret},
     },
-    version::Version,
     PasetoError,
+};
+
+#[cfg(any(feature = "v3-pke", feature = "v4-pke"))]
+use crate::version::Version;
+#[cfg(feature = "v3-pke")]
+use crate::version::V3;
+#[cfg(feature = "v4-pke")]
+use crate::version::V4;
+
+#[cfg(any(feature = "v3-pke", feature = "v4-pke"))]
+use ::{
+    cipher::{inout::InOutBuf, KeyIvInit, StreamCipher},
+    digest::{Digest, Mac},
+    generic_array::sequence::{Concat, Split},
+    subtle::ConstantTimeEq,
 };
 
 use super::{read_b64, write_b64};
@@ -53,6 +61,7 @@ use super::{read_b64, write_b64};
 /// let key2 = sealed.unseal(&secret_key).unwrap();
 /// assert_eq!(key, key2);
 /// ```
+#[allow(dead_code)]
 pub struct SealedKey<V: SealedVersion> {
     tag: GenericArray<u8, V::TagLen>,
     ephemeral_public_key: GenericArray<u8, V::EpkLen>,

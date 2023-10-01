@@ -15,7 +15,7 @@ use crate::{
     key::KeyType,
     purpose::Purpose,
     version::Version,
-    Bytes, Footer, TokenMetadata,
+    Bytes, Footer, PasetoError, TokenMetadata,
 };
 
 use super::{DecryptedToken, EncryptedToken, Local, SymmetricKey, UnencryptedToken};
@@ -166,8 +166,12 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> DecryptedToken<V, M, 
         key: &SymmetricKey<V>,
         nonce: [u8; NONCE_LEN],
         implicit_assertions: &[u8],
-    ) -> Result<EncryptedToken<V, F, E>, Box<dyn std::error::Error>> {
-        let mut m = self.meta.encoding.encode(&self.message)?;
+    ) -> Result<EncryptedToken<V, F, E>, PasetoError> {
+        let mut m = self
+            .meta
+            .encoding
+            .encode(&self.message)
+            .map_err(PasetoError::PayloadError)?;
         let f = self.footer.encode();
 
         let tag = V::encrypt(
@@ -215,7 +219,7 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
         self,
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<EncryptedToken<V, F, E>, Box<dyn std::error::Error>> {
+    ) -> Result<EncryptedToken<V, F, E>, PasetoError> {
         self.0
             .encrypt_inner(key, rand::thread_rng().gen(), implicit_assertions)
     }
@@ -227,7 +231,7 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
         key: &SymmetricKey<V>,
         nonce: [u8; 32],
         implicit_assertions: &[u8],
-    ) -> Result<EncryptedToken<V, F, E>, Box<dyn std::error::Error>> {
+    ) -> Result<EncryptedToken<V, F, E>, PasetoError> {
         self.0.encrypt_inner(key, nonce, implicit_assertions)
     }
 }
@@ -247,7 +251,7 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
         mut self,
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],
-    ) -> Result<DecryptedToken<V, M, F, E>, Box<dyn std::error::Error>>
+    ) -> Result<DecryptedToken<V, M, F, E>, PasetoError>
     where
         E: MessageEncoding<M>,
     {
@@ -262,9 +266,13 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
             &self.encoded_footer,
             implicit_assertions,
         )
-        .map_err(|_| "decryption error")?;
+        .map_err(|_| PasetoError::CryptoError)?;
 
-        let message = self.meta.encoding.decode(m)?;
+        let message = self
+            .meta
+            .encoding
+            .decode(m)
+            .map_err(PasetoError::PayloadError)?;
 
         Ok(DecryptedToken {
             meta: self.meta,

@@ -38,6 +38,7 @@ v4-paserk = ["v4-id", "v4-pbkw", "v4-pke", "v4-wrap"]
 
 v4-local = ["dep:blake2", "dep:chacha20"]
 v4-public = ["dep:ed25519-dalek", "dep:curve25519-dalek"]
+
 v4-id = ["dep:blake2"]
 v4-pbkw = ["dep:argon2", "v4-local"]
 v4-pke = ["v4-local", "v4-public"]
