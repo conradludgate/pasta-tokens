@@ -54,5 +54,5 @@ impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
 
 mod convert;
 
-#[cfg(feature = "arbitrary")]
+#[cfg(fuzzing)]
 mod arbitrary;

@@ -29,7 +29,6 @@
 //!     - `v3-pke`: V3 Sealed Keys
 //!     - `v3-pbkw`: V3 Password wrapped keys
 //!     - `v3-wrap`: v3 Wrapped Keys
-//! * `arbitrary`: [`arbitrary`] support
 //!
 //! ## Examples
 //!
@@ -587,7 +586,7 @@ pub mod fuzzing {
         pub start: usize,
     }
 
-    #[cfg(feature = "arbitrary")]
+    #[cfg(fuzzing)]
     impl<'a, const N: usize> arbitrary::Arbitrary<'a> for FakeRng<N>
     where
         [u8; N]: arbitrary::Arbitrary<'a>,
@@ -637,7 +636,7 @@ pub mod fuzzing {
         data3: String,
     }
 
-    #[cfg(feature = "arbitrary")]
+    #[cfg(fuzzing)]
     impl<'a, V: Version, K: KeyType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
     where
         Key<V, K>: arbitrary::Arbitrary<'a>,

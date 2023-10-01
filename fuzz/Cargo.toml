@@ -15,7 +15,6 @@ serde = { version = "1", features = ["derive"] }
 [dependencies.pasta-tokens]
 path = ".."
 features = [
-    "arbitrary",
     "v3-local",
     "v3-public",
     "v3-pke",

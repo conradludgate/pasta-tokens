@@ -474,7 +474,7 @@ pub mod fuzz_tests {
     };
 
     #[derive(Debug)]
-    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
     pub struct V3SealInput {
         key: Key<V3, Local>,
         secret_key: Key<V3, Secret>,
@@ -501,7 +501,7 @@ pub mod fuzz_tests {
     }
 
     #[derive(Debug)]
-    #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+    #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
     pub struct V4SealInput {
         key: Key<V4, Local>,
         secret_key: Key<V4, Secret>,

@@ -471,7 +471,7 @@ pub mod fuzz_tests {
         ephemeral: FakeRng<32>,
     }
 
-    #[cfg(feature = "arbitrary")]
+    #[cfg(fuzzing)]
     impl<'a, V: PieVersion, K: PieWrapType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
     where
         SymmetricKey<V>: arbitrary::Arbitrary<'a>,
