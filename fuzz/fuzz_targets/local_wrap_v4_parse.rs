@@ -1,8 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use pasta_tokens::{paserk::wrap::PieWrappedKey, version::V4, purpose::local::Local};
 use std::str::FromStr;
-use rusty_paserk::{PieWrappedKey, V4, Local};
 
 fuzz_target!(|data: &str| {
     let _ = PieWrappedKey::<V4, Local>::from_str(data);

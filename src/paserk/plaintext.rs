@@ -1,3 +1,5 @@
+//! Serialize keys in plaintext. Unencrypted.
+
 use std::{fmt, str::FromStr};
 
 use base64ct::{Base64UrlUnpadded, Encoding};

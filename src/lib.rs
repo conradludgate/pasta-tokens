@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "docsrs", feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 //! PASETO - **P**latform **A**gnostic **Se**curity **To**kens.
@@ -79,11 +79,11 @@ pub mod version {
     //! Versions of PASETO. Supports [`V3`] or [`V4`]
 
     /// PASETO Version 3 (NIST)
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct V3;
 
     /// PASETO Version 4 (Sodium)
-    #[derive(Default)]
+    #[derive(Default, Debug)]
     pub struct V4;
 
     /// General information about a PASETO/PASERK version.
@@ -175,6 +175,15 @@ pub trait Footer: Sized {
 
 /// `Json` is a type wrapper to implement `Footer` for all types that implement
 /// [`serde::Serialize`] and [`serde::Deserialize`]
+///
+/// When using a JSON footer, you should be aware of the risks of parsing user provided JSON.
+/// <https://github.com/paseto-standard/paseto-spec/blob/master/docs/02-Implementation-Guide/01-Payload-Processing.md#storing-json-in-the-footer>.
+///
+/// Currently, this uses [`serde_json`] internally, which by default offers a stack-overflow protection limit on parsing JSON.
+/// You should also parse into a known struct layout, and avoid arbitrary key-value mappings.
+///
+/// If you need stricter checks, you can make your own [`Footer`] encodings that give access to the bytes before
+/// the footer is decoded.
 #[derive(Default)]
 pub struct Json<T>(pub T);
 
@@ -244,7 +253,9 @@ pub mod tokens {
     /// This type is un-serializable as it isn't secured. For that you will want [`SecuredToken`].
     pub struct ValidatedToken<V, T, M, F = (), E = Json<()>> {
         pub(crate) meta: TokenMetadata<V, T, E>,
+        /// The message that was contained in the token
         pub message: M,
+        /// The footer that was sent with the token
         pub footer: F,
     }
 
@@ -360,8 +371,8 @@ pub mod tokens {
     }
 
     impl<V, T, F, E> SecuredToken<V, T, F, E> {
-        /// View the footer for this token
-        pub fn footer(&self) -> &F {
+        /// View the **unverified** footer for this token
+        pub fn unverified_footer(&self) -> &F {
             &self.footer
         }
     }
@@ -369,11 +380,18 @@ pub mod tokens {
 
 #[derive(Debug)]
 #[non_exhaustive]
+/// Error returned for all PASETO and PASERK operations that can fail
 pub enum PasetoError {
+    /// The token was not Base64 URL encoded correctly.
     Base64DecodeError,
+    /// Could not decode the provided key string
     InvalidKey,
+    /// The PASETO or PASERK was not of a valid form
     InvalidToken,
+    /// Could not verify/decrypt the PASETO/PASERK.
     CryptoError,
+    // /// There was an error with payload processing
+    // PayloadError(Box<dyn std::error::Error>),
 }
 
 impl std::error::Error for PasetoError {}

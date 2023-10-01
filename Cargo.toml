@@ -16,20 +16,7 @@ categories = [
 ]
 
 [features]
-default = [
-  "v4-public",
-  "v4-local",
-  "v3-public",
-  "v3-local",
-  "v3-pbkw",
-  "v4-pbkw",
-  "v3-pke",
-  "v4-pke",
-  "v3-id",
-  "v4-id",
-  "v3-wrap",
-  "v4-wrap",
-]
+default = []
 
 # docsrs = []
 local = []

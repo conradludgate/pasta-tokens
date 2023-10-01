@@ -1,18 +1,29 @@
 use arbitrary::{Arbitrary, Result, Unstructured};
 
+#[cfg(feature = "local")]
+use crate::purpose::local::Local;
+#[cfg(feature = "public")]
+use crate::purpose::public::Secret;
 #[cfg(feature = "v3")]
-impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Local> {
+use crate::version::V3;
+#[cfg(feature = "v4")]
+use crate::version::V4;
+
+#[cfg(feature = "v3-local")]
+impl<'a> Arbitrary<'a> for super::Key<V3, Local> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let key = <[u8; 32]>::arbitrary(u)?;
-        Ok(Self { key: key.into() })
+        Ok(Self {
+            key: Box::new(key.into()),
+        })
     }
 }
 
-#[cfg(feature = "v3")]
-impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Secret> {
+#[cfg(feature = "v3-public")]
+impl<'a> Arbitrary<'a> for super::Key<V3, Secret> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let key = <[u8; 48]>::arbitrary(u)?;
-        let key = key.into();
+        let key = Box::new(key.into());
 
         if p384::SecretKey::from_bytes(&key).is_err() {
             return Err(arbitrary::Error::IncorrectFormat);
@@ -22,22 +33,26 @@ impl<'a> Arbitrary<'a> for super::Key<super::V3, super::Secret> {
     }
 }
 
-#[cfg(feature = "v4")]
-impl<'a> Arbitrary<'a> for super::Key<super::V4, super::Local> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
-        let key = <[u8; 32]>::arbitrary(u)?;
-        Ok(Self { key: key.into() })
-    }
-}
-
-#[cfg(feature = "v4")]
-impl<'a> Arbitrary<'a> for super::Key<super::V4, super::Secret> {
+#[cfg(feature = "v4-local")]
+impl<'a> Arbitrary<'a> for super::Key<V4, Local> {
     fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
         let key = <[u8; 32]>::arbitrary(u)?;
         Ok(Self {
-            key: ed25519_dalek::SigningKey::from_bytes(&key)
-                .to_keypair_bytes()
-                .into(),
+            key: Box::new(key.into()),
+        })
+    }
+}
+
+#[cfg(feature = "v4-public")]
+impl<'a> Arbitrary<'a> for super::Key<V4, Secret> {
+    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+        let key = <[u8; 32]>::arbitrary(u)?;
+        Ok(Self {
+            key: Box::new(
+                ed25519_dalek::SigningKey::from_bytes(&key)
+                    .to_keypair_bytes()
+                    .into(),
+            ),
         })
     }
 }

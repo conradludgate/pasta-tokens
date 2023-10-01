@@ -1,5 +1,5 @@
 [package]
-name = "rusty_paserk-fuzz"
+name = "pasta-tokens-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2021"
@@ -10,11 +10,20 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 rand = "0.8.5"
-p384 = { version = "0.13.0" }
 
-[dependencies.rusty_paserk]
+[dependencies.pasta-tokens]
 path = ".."
-features = ["arbitrary"]
+features = [
+    "arbitrary",
+    "v3-local",
+    "v3-public",
+    "v3-pke",
+    "v3-wrap",
+    "v4-local",
+    "v4-public",
+    "v4-pke",
+    "v4-wrap",
+]
 
 # Prevent this from interfering with workspaces
 [workspace]

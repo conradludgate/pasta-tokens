@@ -170,6 +170,19 @@
 //! ```
 //!
 //! See the [`PwWrappedKey`] type for more info.
+//!
+//! [`Key`]: crate::key::Key
+//! [`V3`]: crate::version::V3
+//! [`V4`]: crate::version::V4
+//! [`Local`]: crate::purpose::local::Local
+//! [`Public`]: crate::purpose::public::Public
+//! [`Secret`]: crate::purpose::public::Secret
+//!
+//! [`KeyId`]: id::KeyId
+//! [`PwWrappedKey`]: pbkw::PwWrappedKey
+//! [`PlaintextKey`]: plaintext::PlaintextKey
+//! [`PieWrappedKey`]: wrap::PieWrappedKey
+//! [`SealedKey`]: pke::SealedKey
 
 use base64ct::Encoding;
 use cipher::Unsigned;

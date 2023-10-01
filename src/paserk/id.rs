@@ -1,3 +1,17 @@
+//! Unique Identifiers for PASETO keys
+//!
+//! # Uses
+//! Imagine you have a token service that produces public PASETO tokens signed with a secret key.
+//! It's good practice to rotate those keys regularly to minimise the damage that a key leak can do long term.
+//!
+//! Since multiple keys can be active while old tokens are still circulating, you need a way to identify which key signed a token.
+//! Your first idea might be to include the public key with the token, but that allows an attacker to provide their own public key.
+//!
+//! Therefore, it is recommended to include the public key _ID_ with the token. When validating a token, you can use an in memory cache
+//! to find the associated public key from the key ID.
+//!
+//! See <https://github.com/paseto-standard/paseto-spec/blob/master/docs/02-Implementation-Guide/01-Payload-Processing.md#key-id-support> for details
+
 use std::{fmt, marker::PhantomData, str::FromStr};
 
 use base64ct::Encoding;
