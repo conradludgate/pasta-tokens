@@ -3,12 +3,11 @@ use generic_array::ArrayLength;
 
 use crate::{
     encodings::{MessageEncoding, PayloadEncoding},
-    key::KeyType,
     version::Version,
     Bytes, Footer, TokenMetadata,
 };
 
-use super::{Public, PublicKey, Secret, SecretKey, SignedToken, UnsignedToken, VerifiedToken};
+use super::{PublicKey, SecretKey, SignedToken, UnsignedToken, VerifiedToken};
 
 /// General information about a PASETO/PASERK version
 pub trait PublicVersion: Version {

@@ -9,6 +9,7 @@
 //! Paseto is everything you love about JOSE (JWT, JWE, JWS) without any of the [many design deficits that plague the JOSE standards](https://paragonie.com/blog/2017/03/jwt-json-web-tokens-is-bad-standard-that-everyone-should-avoid).
 //! See more about PASETO in the [specification](https://github.com/paseto-standard/paseto-spec)
 
+#[allow(dead_code)]
 type Bytes<N> = generic_array::GenericArray<u8, N>;
 
 pub mod purpose {
@@ -158,6 +159,7 @@ pub mod encodings {
 // WIP
 // pub mod claims;
 
+#[cfg(any(feature = "local", feature = "public"))]
 mod pae;
 
 /// Encoding scheme for PASETO footers.
@@ -231,6 +233,7 @@ mod sealed {
 struct TokenMetadata<V, T, E> {
     version_header: V,
     token_type: T,
+    #[allow(dead_code)]
     encoding: E,
 }
 
@@ -308,6 +311,7 @@ pub mod tokens {
     /// * [`SignedToken::verify`](purpose::public::SignedToken::verify)
     /// * [`EncryptedToken::decrypt`](purpose::local::EncryptedToken::decrypt)
     pub struct SecuredToken<V, T, F = (), E = Json<()>> {
+        #[allow(dead_code)]
         pub(crate) meta: TokenMetadata<V, T, E>,
         pub(crate) payload: Vec<u8>,
         pub(crate) encoded_footer: Vec<u8>,

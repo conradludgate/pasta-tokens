@@ -4,4 +4,4 @@ This crate has NOT been independently audited.  As with any code you find on the
 
 ## Reporting a Vulnerability
 
-Please report any issues to the maintainer by creating a bug report. Thank you for your contribution!
+Please exercise responsible disclosure. Email the maintainer and wait for a fix before publishing a vulnerability.

@@ -86,7 +86,7 @@ impl PasetoTest {
                 let Ok(token): Result<EncryptedToken<V, Vec<u8>>, _> = token.parse() else {
                     return Ok(());
                 };
-                assert_eq!(token.footer(), footer.as_bytes());
+                assert_eq!(token.unverified_footer(), footer.as_bytes());
 
                 match token.decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes()) {
                     Ok(_) => Err("decrypting token should fail".into()),
@@ -102,7 +102,7 @@ impl PasetoTest {
             } => {
                 let key = SymmetricKey::<V>::from_key(&key);
                 let token: EncryptedToken<V, Vec<u8>> = token_str.parse().unwrap();
-                assert_eq!(token.footer(), footer.as_bytes());
+                assert_eq!(token.unverified_footer(), footer.as_bytes());
 
                 let decrypted_token = token
                     .decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes())
@@ -134,7 +134,7 @@ impl PasetoTest {
                 let Ok(token): Result<SignedToken<V, Vec<u8>>, _> = token.parse() else {
                     return Ok(());
                 };
-                assert_eq!(token.footer(), footer.as_bytes());
+                assert_eq!(token.unverified_footer(), footer.as_bytes());
 
                 match token.verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())
                 {
@@ -157,7 +157,7 @@ impl PasetoTest {
                 let secret_key = SecretKey::<V>::from_key(&secret_key);
 
                 let token: SignedToken<V, Vec<u8>> = token_str.parse().unwrap();
-                assert_eq!(token.footer(), footer.as_bytes());
+                assert_eq!(token.unverified_footer(), footer.as_bytes());
 
                 let token = token
                     .verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())

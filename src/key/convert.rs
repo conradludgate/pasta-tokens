@@ -1,8 +1,8 @@
-use generic_array::GenericArray;
-use rand::{rngs::OsRng, CryptoRng, RngCore};
-
 use super::{Key, KeyType};
-use crate::{version::Version, PasetoError};
+use crate::version::Version;
+
+#[cfg(any(feature = "public", feature = "local"))]
+use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 #[cfg(feature = "v3-public")]
 impl crate::purpose::public::SecretKey<crate::version::V3> {
@@ -20,16 +20,16 @@ impl crate::purpose::public::SecretKey<crate::version::V3> {
     ///
     /// let _key = Key::from_sec1_pem(private_key).unwrap();
     /// ```
-    pub fn from_sec1_pem(s: &str) -> Result<Self, PasetoError> {
-        let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| PasetoError::InvalidKey)?;
+    pub fn from_sec1_pem(s: &str) -> Result<Self, crate::PasetoError> {
+        let sk = p384::SecretKey::from_sec1_pem(s).map_err(|_| crate::PasetoError::InvalidKey)?;
         Ok(Self {
             key: Box::new(sk.to_bytes()),
         })
     }
 
     /// Decode a secret key from raw bytes
-    pub fn from_bytes(s: &[u8]) -> Result<Self, PasetoError> {
-        let sk = p384::SecretKey::from_slice(s).map_err(|_| PasetoError::InvalidKey)?;
+    pub fn from_bytes(s: &[u8]) -> Result<Self, crate::PasetoError> {
+        let sk = p384::SecretKey::from_slice(s).map_err(|_| crate::PasetoError::InvalidKey)?;
         Ok(Self {
             key: Box::new(sk.to_bytes()),
         })
@@ -44,7 +44,7 @@ impl crate::purpose::public::SecretKey<crate::version::V3> {
         let pk = pk.compress();
         let pk = pk.as_bytes();
         Key {
-            key: Box::new(*GenericArray::from_slice(pk)),
+            key: Box::new(*generic_array::GenericArray::from_slice(pk)),
         }
     }
 }
@@ -64,27 +64,28 @@ impl crate::purpose::public::PublicKey<crate::version::V3> {
     ///
     /// let _key = Key::from_public_key_pem(public_key).unwrap();
     /// ```
-    pub fn from_public_key_pem(s: &str) -> Result<Self, PasetoError> {
+    pub fn from_public_key_pem(s: &str) -> Result<Self, crate::PasetoError> {
         use p384::{pkcs8::DecodePublicKey, EncodedPoint};
 
-        let pk = p384::PublicKey::from_public_key_pem(s).map_err(|_| PasetoError::InvalidKey)?;
+        let pk =
+            p384::PublicKey::from_public_key_pem(s).map_err(|_| crate::PasetoError::InvalidKey)?;
         let pk: EncodedPoint = pk.into();
         let pk = pk.compress();
         let pk = pk.as_bytes();
 
         Ok(Self {
-            key: Box::new(*GenericArray::from_slice(pk)),
+            key: Box::new(*generic_array::GenericArray::from_slice(pk)),
         })
     }
 
     /// Decode a public key from raw bytes
-    pub fn from_sec1_bytes(s: &[u8]) -> Result<Self, PasetoError> {
-        let pk = p384::PublicKey::from_sec1_bytes(s).map_err(|_| PasetoError::InvalidKey)?;
+    pub fn from_sec1_bytes(s: &[u8]) -> Result<Self, crate::PasetoError> {
+        let pk = p384::PublicKey::from_sec1_bytes(s).map_err(|_| crate::PasetoError::InvalidKey)?;
         let pk: p384::EncodedPoint = pk.into();
         let pk = pk.compress();
         let pk = pk.as_bytes();
         Ok(Self {
-            key: Box::new(*GenericArray::from_slice(pk)),
+            key: Box::new(*generic_array::GenericArray::from_slice(pk)),
         })
     }
 }
@@ -101,12 +102,12 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
     ///
     /// let _key = Key::from_keypair_bytes(&private_key).unwrap();
     /// ```
-    pub fn from_keypair_bytes(key: &[u8]) -> Result<Self, PasetoError> {
+    pub fn from_keypair_bytes(key: &[u8]) -> Result<Self, crate::PasetoError> {
         use ed25519_dalek::SigningKey;
-        let key: [u8; 64] = key.try_into().map_err(|_| PasetoError::InvalidKey)?;
+        let key: [u8; 64] = key.try_into().map_err(|_| crate::PasetoError::InvalidKey)?;
         match SigningKey::from_keypair_bytes(&key) {
             Ok(_) => {}
-            Err(_) => return Err(PasetoError::InvalidKey),
+            Err(_) => return Err(crate::PasetoError::InvalidKey),
         };
         Ok(Key {
             key: Box::new(key.into()),
@@ -137,7 +138,10 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
     /// Get the corresponding V4 public key for this V4 secret key
     pub fn public_key(&self) -> crate::purpose::public::PublicKey<crate::version::V4> {
         use generic_array::sequence::Split;
-        let (_sk, pk): (GenericArray<u8, generic_array::typenum::U32>, _) = self.key.split();
+        let (_sk, pk): (
+            generic_array::GenericArray<u8, generic_array::typenum::U32>,
+            _,
+        ) = self.key.split();
         Key { key: Box::new(pk) }
     }
 }
@@ -154,10 +158,10 @@ impl crate::purpose::public::PublicKey<crate::version::V4> {
     ///
     /// let _key = Key::from_public_key(&public_key);
     /// ```
-    pub fn from_public_key(key: &[u8]) -> Result<Self, PasetoError> {
-        let key = key.try_into().map_err(|_| PasetoError::InvalidKey)?;
-        let _ =
-            ed25519_dalek::VerifyingKey::from_bytes(&key).map_err(|_| PasetoError::InvalidKey)?;
+    pub fn from_public_key(key: &[u8]) -> Result<Self, crate::PasetoError> {
+        let key = key.try_into().map_err(|_| crate::PasetoError::InvalidKey)?;
+        let _ = ed25519_dalek::VerifyingKey::from_bytes(&key)
+            .map_err(|_| crate::PasetoError::InvalidKey)?;
 
         Ok(Self {
             key: Box::new(key.into()),
@@ -208,7 +212,7 @@ impl<V: crate::purpose::local::LocalVersion> crate::purpose::local::SymmetricKey
 
     /// Generate a random local key using the provided random source
     pub fn new_random(rng: &mut (impl RngCore + CryptoRng)) -> Self {
-        let mut key = GenericArray::<u8, V::KeySize>::default();
+        let mut key = generic_array::GenericArray::<u8, V::KeySize>::default();
         rng.fill_bytes(&mut key);
         Self { key: Box::new(key) }
     }
