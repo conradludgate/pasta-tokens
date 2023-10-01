@@ -69,10 +69,10 @@
 //! The [`KeyId`] type represents key ids. Building a KeyID is as simple as
 //!
 //! ```
-//! use rusty_paserk::{Key, Local, KeyId, V4};
+//! use pasta_tokens::{key::Key, purpose::local::Local, paserk::id::KeyId, version::V4};
 //!
 //! let local_key = Key::<V4, Local>::new_os_random();
-//! let kid: KeyId<V4, Local> = local_key.into();
+//! let kid: KeyId<V4, Local> = local_key.to_id();
 //! // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
 //! ```
 //!
@@ -83,7 +83,7 @@
 //! The [`PlaintextKey`] type represents the base64 encoded plaintext key types.
 //!
 //! ```
-//! use rusty_paserk::{Key, Local, PlaintextKey, V4};
+//! use pasta_tokens::{key::Key, purpose::local::Local, paserk::plaintext::PlaintextKey, version::V4};
 //!
 //! let local_key = Key::<V4, Local>::new_os_random();
 //! let key = PlaintextKey(local_key);
@@ -97,7 +97,12 @@
 //! Using a public key, you can seal a local key. Using the corresponding private key, you can unseal the key again.
 //!
 //! ```
-//! use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
+//! use pasta_tokens::{
+//!     key::Key,
+//!     purpose::{local::Local, public::Secret},
+//!     paserk::pke::SealedKey,
+//!     version::V4
+//! };
 //!
 //! let key = Key::<V4, Local>::new_os_random();
 //!
@@ -119,7 +124,12 @@
 //! Using a local key, you can wrap a local or a secret key. It can be unwrapped using the same local key.
 //!
 //! ```
-//! use rusty_paserk::{PieWrappedKey, Key, Local, V4};
+//! use pasta_tokens::{
+//!     key::Key,
+//!     purpose::local::Local,
+//!     paserk::wrap::PieWrappedKey,
+//!     version::V4
+//! };
 //!
 //! let wrapping_key = Key::<V4, Local>::new_os_random();
 //!
@@ -140,7 +150,12 @@
 //! Using a password, you can wrap a local or a secret key. It can be unwrapped using the same password.
 //!
 //! ```
-//! use rusty_paserk::{PwWrappedKey, Key, Local, Secret, V4, Argon2State};
+//! use pasta_tokens::{
+//!     key::Key,
+//!     purpose::{local::Local, public::Secret},
+//!     paserk::pbkw::{PwWrappedKey, Argon2State},
+//!     version::V4
+//! };
 //!
 //! let password = "hunter2";
 //!

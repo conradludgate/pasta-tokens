@@ -9,7 +9,7 @@ impl crate::purpose::public::SecretKey<crate::version::V3> {
     /// Decode a PEM encoded SEC1 p384 Secret Key
     ///
     /// ```
-    /// use rusty_paserk::Key;
+    /// use pasta_tokens::key::Key;
     ///
     /// let private_key = "-----BEGIN EC PRIVATE KEY-----
     /// MIGkAgEBBDAhUb6WGhABE1MTj0x7E/5acgyap23kh7hUAVoAavKyfhYcmI3n1Q7L
@@ -54,7 +54,7 @@ impl crate::purpose::public::PublicKey<crate::version::V3> {
     /// Decode a PEM encoded p384 Public Key
     ///
     /// ```
-    /// use rusty_paserk::Key;
+    /// use pasta_tokens::key::Key;
     ///
     /// let public_key = "-----BEGIN PUBLIC KEY-----
     /// MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE+R+5k0jso3yCw7Urmr2X2pSN3aDPKUVJ
@@ -94,7 +94,7 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
     /// Decode an Ed25519 Secret Keypair
     ///
     /// ```
-    /// use rusty_paserk::Key;
+    /// use pasta_tokens::key::Key;
     ///
     /// let private_key = "407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1db7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023";
     /// let private_key = hex::decode(&private_key).unwrap();
@@ -116,7 +116,7 @@ impl crate::purpose::public::SecretKey<crate::version::V4> {
     /// Create a new secret key from the byte array
     ///
     /// ```
-    /// use rusty_paserk::Key;
+    /// use pasta_tokens::key::Key;
     ///
     /// let private_key = "407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1d";
     /// let private_key = hex::decode(&private_key).unwrap();
@@ -147,7 +147,7 @@ impl crate::purpose::public::PublicKey<crate::version::V4> {
     /// Decode a PEM encoded SEC1 Ed25519 Secret Key
     ///
     /// ```
-    /// use rusty_paserk::Key;
+    /// use pasta_tokens::key::Key;
     ///
     /// let public_key = "b7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023";
     /// let public_key = hex::decode(&public_key).unwrap();

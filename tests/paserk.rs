@@ -70,7 +70,7 @@ impl IdTest {
     fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
     where
         Key<V, K>: NewKey,
-        KeyId<V, K>: From<Key<V, K>>,
+        KeyId<V, K>: for<'a> From<&'a Key<V, K>>,
     {
         let test_file: TestFile<Self> = read_test(&format!("{}.{}json", V::PASERK_HEADER, K::ID));
         for test in test_file.tests {
@@ -81,7 +81,7 @@ impl IdTest {
     fn test<V: Version, K: KeyType<V>>(self) -> Result<(), Failed>
     where
         Key<V, K>: NewKey,
-        KeyId<V, K>: From<Key<V, K>>,
+        KeyId<V, K>: for<'a> From<&'a Key<V, K>>,
     {
         if let Some(paserk) = self.paserk {
             let key = Key::<V, K>::from_key(&self.key);

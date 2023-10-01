@@ -22,22 +22,22 @@ use super::write_b64;
 ///
 /// # Local IDs
 /// ```
-/// use rusty_paserk::{KeyId, Key, Local, V4};
+/// use pasta_tokens::{key::Key, purpose::local::Local, paserk::id::KeyId, version::V4};
 ///
 /// let local_key = Key::<V4, Local>::new_os_random();
-/// let kid: KeyId<V4, Local> = local_key.into();
+/// let kid: KeyId<V4, Local> = local_key.to_id();
 /// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
 /// ```
 ///
 /// # Public/Secret IDs
 /// ```
-/// use rusty_paserk::{KeyId, Key, Secret, Public, V4};
+/// use pasta_tokens::{key::Key, purpose::public::{Public, Secret}, paserk::id::KeyId, version::V4};
 ///
 /// let secret_key = Key::<V4, Secret>::new_os_random();
-/// let kid: KeyId<V4, Secret> = secret_key.into();
+/// let kid: KeyId<V4, Secret> = secret_key.to_id();
 /// // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
 ///
-/// let kid: KeyId<V4, Public> = secret_key.public_key().into();
+/// let kid: KeyId<V4, Public> = secret_key.public_key().to_id();
 /// // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
 /// ```
 pub struct KeyId<V: Version, K: KeyType<V>> {
@@ -110,27 +110,27 @@ impl<V: Version, K: KeyType<V>> Copy for KeyId<V, K> {}
 
 impl<V: Version, K: KeyType<V>> Key<V, K>
 where
-    KeyId<V, K>: From<Self>,
+    KeyId<V, K>: for<'a> From<&'a Self>,
 {
     /// Unique ID for a key
     ///
     /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
     ///
     /// ```
-    /// use rusty_paserk::{KeyId, Key, Local, V4};
+    /// use pasta_tokens::{key::Key, purpose::local::Local, paserk::id::KeyId, version::V4};
     ///
     /// let local_key = Key::<V4, Local>::new_os_random();
     /// let kid = local_key.to_id();
     /// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
     /// ```
     pub fn to_id(&self) -> KeyId<V, K> {
-        self.clone().into()
+        self.into()
     }
 }
 
 #[cfg(feature = "v3-id")]
-impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {
-    fn from(key: Key<V3, K>) -> Self {
+impl<K: KeyType<V3>> From<&Key<V3, K>> for KeyId<V3, K> {
+    fn from(key: &Key<V3, K>) -> Self {
         use base64ct::Base64UrlUnpadded;
         use sha2::digest::Digest;
 
@@ -158,8 +158,8 @@ impl<K: KeyType<V3>> From<Key<V3, K>> for KeyId<V3, K> {
 }
 
 #[cfg(feature = "v4-id")]
-impl<K: KeyType<V4>> From<Key<V4, K>> for KeyId<V4, K> {
-    fn from(key: Key<V4, K>) -> Self {
+impl<K: KeyType<V4>> From<&Key<V4, K>> for KeyId<V4, K> {
+    fn from(key: &Key<V4, K>) -> Self {
         use base64ct::Base64UrlUnpadded;
         use blake2::digest::Digest;
 

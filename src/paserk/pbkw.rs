@@ -34,7 +34,12 @@ use super::{read_b64, write_b64};
 ///
 /// # Local password wrapping
 /// ```
-/// use rusty_paserk::{PwWrappedKey, Key, Local, V4, Argon2State};
+/// use pasta_tokens::{
+///     key::Key,
+///     purpose::local::Local,
+///     paserk::pbkw::{PwWrappedKey, Argon2State},
+///     version::V4
+/// };
 ///
 /// let password = "hunter2";
 ///
@@ -50,7 +55,12 @@ use super::{read_b64, write_b64};
 ///
 /// # Secret password wrapping
 /// ```
-/// use rusty_paserk::{PwWrappedKey, Key, Local, Secret, V4, Argon2State};
+/// use pasta_tokens::{
+///     key::Key,
+///     purpose::public::Secret,
+///     paserk::pbkw::{PwWrappedKey, Argon2State},
+///     version::V4
+/// };
 ///
 /// let password = "hunter2";
 ///
@@ -79,7 +89,12 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
     ///
     /// # Local password wrapping
     /// ```
-    /// use rusty_paserk::{PwWrappedKey, Key, Local, V4, Argon2State};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::local::Local,
+    ///     paserk::pbkw::{PwWrappedKey, Argon2State},
+    ///     version::V4
+    /// };
     ///
     /// let password = "hunter2";
     ///
@@ -95,7 +110,12 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
     ///
     /// # Secret password wrapping
     /// ```
-    /// use rusty_paserk::{PwWrappedKey, Key, Local, Secret, V4, Argon2State};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::public::Secret,
+    ///     paserk::pbkw::{PwWrappedKey, Argon2State},
+    ///     version::V4
+    /// };
     ///
     /// let password = "hunter2";
     ///

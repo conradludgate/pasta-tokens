@@ -34,7 +34,12 @@ use super::{read_b64, write_b64};
 ///
 /// # Secret Wrapping
 /// ```
-/// use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
+/// use pasta_tokens::{
+///     key::Key,
+///     purpose::{local::Local, public::Secret},
+///     paserk::pke::SealedKey,
+///     version::V4
+/// };
 ///
 /// let key = Key::<V4, Local>::new_os_random();
 ///
@@ -61,7 +66,12 @@ impl<V: SealedVersion> Key<V, Local> {
     ///
     /// # Secret Wrapping
     /// ```
-    /// use rusty_paserk::{SealedKey, Key, Local, Secret, V4};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::{local::Local, public::Secret},
+    ///     paserk::pke::SealedKey,
+    ///     version::V4
+    /// };
     ///
     /// let key = Key::<V4, Local>::new_os_random();
     ///

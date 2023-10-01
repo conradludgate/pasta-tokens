@@ -35,7 +35,12 @@ use super::{read_b64, write_b64};
 ///
 /// # Local Wrapping
 /// ```
-/// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
+/// use pasta_tokens::{
+///     key::Key,
+///     purpose::local::Local,
+///     paserk::wrap::PieWrappedKey,
+///     version::V4
+/// };
 ///
 /// let wrapping_key = Key::<V4, Local>::new_os_random();
 ///
@@ -51,7 +56,12 @@ use super::{read_b64, write_b64};
 ///
 /// # Secret Wrapping
 /// ```
-/// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
+/// use pasta_tokens::{
+///     key::Key,
+///     purpose::{local::Local, public::Secret},
+///     paserk::wrap::PieWrappedKey,
+///     version::V4
+/// };
 ///
 /// let wrapping_key = Key::<V4, Local>::new_os_random();
 ///
@@ -82,7 +92,12 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     ///
     /// # Local Wrapping
     /// ```
-    /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::local::Local,
+    ///     paserk::wrap::PieWrappedKey,
+    ///     version::V4
+    /// };
     ///
     /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
@@ -98,7 +113,12 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     ///
     /// # Secret Wrapping
     /// ```
-    /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::{local::Local, public::Secret},
+    ///     paserk::wrap::PieWrappedKey,
+    ///     version::V4
+    /// };
     ///
     /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
@@ -181,7 +201,12 @@ where
     ///
     /// # Local Wrapping
     /// ```
-    /// use rusty_paserk::{PieWrappedKey, Key, Local, V4};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::local::Local,
+    ///     paserk::wrap::PieWrappedKey,
+    ///     version::V4
+    /// };
     ///
     /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
@@ -197,7 +222,12 @@ where
     ///
     /// # Secret Wrapping
     /// ```
-    /// use rusty_paserk::{PieWrappedKey, Key, Local, Secret, V4};
+    /// use pasta_tokens::{
+    ///     key::Key,
+    ///     purpose::{local::Local, public::Secret},
+    ///     paserk::wrap::PieWrappedKey,
+    ///     version::V4
+    /// };
     ///
     /// let wrapping_key = Key::<V4, Local>::new_os_random();
     ///
