@@ -33,7 +33,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo clippy --features ${{ matrix.feature }} -- -D warnings
+      - name: clippy
+        run: cargo clippy --features ${{ matrix.feature }} -- -D warnings
+        env:
+          RUSTFLAGS: "-Wunused-crate-dependencies"
 
   test:
     name: Test
