@@ -1,5 +1,3 @@
-use arbitrary::{Arbitrary, Result, Unstructured};
-
 #[cfg(any(feature = "v3-local", feature = "v4-local"))]
 use crate::purpose::local::Local;
 #[cfg(any(feature = "v3-public", feature = "v4-public"))]
@@ -10,8 +8,8 @@ use crate::version::V3;
 use crate::version::V4;
 
 #[cfg(feature = "v3-local")]
-impl<'a> Arbitrary<'a> for super::Key<V3, Local> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+impl<'a> arbitrary::Arbitrary<'a> for super::Key<V3, Local> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let key = <[u8; 32]>::arbitrary(u)?;
         Ok(Self {
             key: Box::new(key.into()),
@@ -20,8 +18,8 @@ impl<'a> Arbitrary<'a> for super::Key<V3, Local> {
 }
 
 #[cfg(feature = "v3-public")]
-impl<'a> Arbitrary<'a> for super::Key<V3, Secret> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+impl<'a> arbitrary::Arbitrary<'a> for super::Key<V3, Secret> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let key = <[u8; 48]>::arbitrary(u)?;
         let key = Box::new(key.into());
 
@@ -34,8 +32,8 @@ impl<'a> Arbitrary<'a> for super::Key<V3, Secret> {
 }
 
 #[cfg(feature = "v4-local")]
-impl<'a> Arbitrary<'a> for super::Key<V4, Local> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+impl<'a> arbitrary::Arbitrary<'a> for super::Key<V4, Local> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let key = <[u8; 32]>::arbitrary(u)?;
         Ok(Self {
             key: Box::new(key.into()),
@@ -44,8 +42,8 @@ impl<'a> Arbitrary<'a> for super::Key<V4, Local> {
 }
 
 #[cfg(feature = "v4-public")]
-impl<'a> Arbitrary<'a> for super::Key<V4, Secret> {
-    fn arbitrary(u: &mut Unstructured<'a>) -> Result<Self> {
+impl<'a> arbitrary::Arbitrary<'a> for super::Key<V4, Secret> {
+    fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
         let key = <[u8; 32]>::arbitrary(u)?;
         Ok(Self {
             key: Box::new(
