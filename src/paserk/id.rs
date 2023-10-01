@@ -121,6 +121,11 @@ impl<V: Version, K: KeyType<V>> Clone for KeyId<V, K> {
     }
 }
 impl<V: Version, K: KeyType<V>> Copy for KeyId<V, K> {}
+impl<V: Version, K: KeyType<V>> core::hash::Hash for KeyId<V, K> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
 
 impl<V: Version, K: KeyType<V>> Key<V, K>
 where
@@ -227,7 +232,12 @@ impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for KeyId<V, K> {
             type Value = KeyId<V, K>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a \"{}{}\" serialized key", V::KEY_HEADER, K::ID)
+                write!(
+                    formatter,
+                    "a \"{}.{}\" serialized key",
+                    V::PASERK_HEADER,
+                    K::ID
+                )
             }
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where

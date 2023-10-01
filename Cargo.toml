@@ -34,21 +34,24 @@ wrap = ["paserk"]
 
 # V3 contains NIST approved algoritms only
 v3 = []
-v3-local = ["v3", "local", "aes", "ctr", "hkdf", "hmac", "sha2"]
-v3-public = ["v3", "public", "p384", "ecdsa"]
-v3-id = ["v3", "id", "sha2"]
-v3-pbkw = ["v3", "pbkw", "pbkdf2", "v3-local"]
+v3-local = ["v3", "local", "dep:aes", "dep:ctr", "dep:hkdf", "dep:hmac", "dep:sha2"]
+v3-public = ["v3", "public", "dep:p384", "dep:ecdsa"]
+v3-id = ["v3", "id", "dep:sha2"]
+v3-pbkw = ["v3", "pbkw", "dep:pbkdf2", "v3-local"]
 v3-pke = ["v3", "pke", "v3-local", "v3-public"]
 v3-wrap = ["v3", "wrap", "v3-local"]
 
 # V4 is recommended
 v4 = []
-v4-local = ["v4", "local", "blake2", "chacha20"]
-v4-public = ["v4", "public", "ed25519-dalek", "curve25519-dalek"]
-v4-id = ["v4", "id", "blake2"]
-v4-pbkw = ["v4", "pbkw", "argon2", "v4-local"]
+v4-local = ["v4", "local", "dep:blake2", "dep:chacha20"]
+v4-public = ["v4", "public", "dep:ed25519-dalek", "dep:curve25519-dalek"]
+v4-id = ["v4", "id", "dep:blake2"]
+v4-pbkw = ["v4", "pbkw", "dep:argon2", "v4-local"]
 v4-pke = ["v4", "pke", "v4-local", "v4-public"]
 v4-wrap = ["v4", "wrap", "v4-local"]
+
+serde = []
+arbitrary = ["dep:arbitrary"]
 
 test = []
 
@@ -96,6 +99,8 @@ rand = "0.8"
 hex = "0.4"
 ff = "0.13.0"
 pasta-tokens = { path = ".", features = ["test"] }
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 libtest-mimic = "0.6.1"
 

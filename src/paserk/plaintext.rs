@@ -50,7 +50,6 @@ impl<V: Version, K: KeyType<V>> FromStr for PlaintextKey<V, K> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<V: Version, K: KeyType<V>> serde::Serialize for PlaintextKey<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -61,7 +60,6 @@ impl<V: Version, K: KeyType<V>> serde::Serialize for PlaintextKey<V, K> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for PlaintextKey<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -75,9 +73,9 @@ impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for PlaintextKey<V,
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(
                     formatter,
-                    "a \"{}{}\" serialized key",
-                    V::KEY_HEADER,
-                    K::HEADER
+                    "a \"{}.{}\" serialized key",
+                    V::PASERK_HEADER,
+                    K::KEY_HEADER
                 )
             }
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>

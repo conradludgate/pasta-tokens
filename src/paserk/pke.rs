@@ -531,7 +531,7 @@ impl<'de, V: SealedVersion> serde::Deserialize<'de> for SealedKey<V> {
             type Value = SealedKey<V>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a \"{}seal.\" serialized key", V::KEY_HEADER)
+                write!(formatter, "a \"{}.seal.\" serialized key", V::PASERK_HEADER)
             }
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where

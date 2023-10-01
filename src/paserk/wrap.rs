@@ -524,8 +524,8 @@ impl<'de, V: PieVersion, K: PieWrapType<V>> serde::Deserialize<'de> for PieWrapp
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(
                     formatter,
-                    "a \"{}{}pie.\" serialized key",
-                    V::KEY_HEADER,
+                    "a \"{}.{}pie.\" serialized key",
+                    V::PASERK_HEADER,
                     K::WRAP_HEADER
                 )
             }

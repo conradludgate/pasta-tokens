@@ -574,8 +574,8 @@ impl<'de, V: PwVersion, K: PwWrapType<V>> serde::Deserialize<'de> for PwWrappedK
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
                 write!(
                     formatter,
-                    "a \"{}{}\" serialized key",
-                    V::KEY_HEADER,
+                    "a \"{}.{}\" serialized key",
+                    V::PASERK_HEADER,
                     K::WRAP_HEADER
                 )
             }
