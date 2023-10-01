@@ -153,7 +153,7 @@
 //! use pasta_tokens::{
 //!     key::Key,
 //!     purpose::{local::Local, public::Secret},
-//!     paserk::pbkw::{PwWrappedKey, Argon2State},
+//!     paserk::pbkw::PwWrappedKey,
 //!     version::V4
 //! };
 //!
@@ -189,9 +189,9 @@ use cipher::Unsigned;
 
 use crate::PasetoError;
 
-#[cfg(feature = "id")]
+// #[cfg(feature = "id")]
 pub mod id;
-#[cfg(feature = "pbkw")]
+// #[cfg(feature = "pbkw")]
 pub mod pbkw;
 #[cfg(feature = "pke")]
 pub mod pke;

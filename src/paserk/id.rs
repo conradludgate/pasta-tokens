@@ -211,7 +211,6 @@ where
 {
 }
 
-#[cfg(feature = "serde")]
 impl<V: Version, K: KeyType<V>> serde::Serialize for KeyId<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -221,7 +220,6 @@ impl<V: Version, K: KeyType<V>> serde::Serialize for KeyId<V, K> {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for KeyId<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

@@ -11,7 +11,6 @@ use crate::{
         local::{Local, LocalVersion, SymmetricKey},
         public::Secret,
     },
-    version::Version,
     PasetoError,
 };
 use cipher::{KeyInit, KeyIvInit, StreamCipher};
@@ -337,7 +336,7 @@ impl<V: PieVersion, K: PieWrapType<V>> fmt::Display for PieWrappedKey<V, K> {
 }
 
 /// Version info for configuring PIE Key wrapping
-pub trait PieVersion: Version + LocalVersion {
+pub trait PieVersion: LocalVersion {
     #[doc(hidden)]
     type Cipher: StreamCipher + KeyIvInit;
     #[doc(hidden)]
@@ -501,7 +500,6 @@ pub mod fuzz_tests {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<V: PieVersion, K: PieWrapType<V>> serde::Serialize for PieWrappedKey<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -511,7 +509,6 @@ impl<V: PieVersion, K: PieWrapType<V>> serde::Serialize for PieWrappedKey<V, K> 
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de, V: PieVersion, K: PieWrapType<V>> serde::Deserialize<'de> for PieWrappedKey<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

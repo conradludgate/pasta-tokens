@@ -1,7 +1,6 @@
 use super::{Key, KeyType};
 use crate::version::Version;
 
-#[cfg(any(feature = "public", feature = "local"))]
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 #[cfg(feature = "v3-public")]
@@ -203,7 +202,6 @@ impl<V: Version, K: KeyType<V>> AsRef<[u8]> for Key<V, K> {
     }
 }
 
-#[cfg(feature = "local")]
 impl<V: crate::purpose::local::LocalVersion> crate::purpose::local::SymmetricKey<V> {
     /// Generate a random local key using OS random
     pub fn new_os_random() -> Self {

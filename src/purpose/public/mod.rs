@@ -4,10 +4,8 @@
 //! * Transparent claims provided by a third party.
 //!   + e.g. Authentication and authorization protocols (OAuth 2, OIDC).
 
-#[cfg(feature = "public")]
 mod impl_;
 
-#[cfg(feature = "public")]
 pub use impl_::*;
 
 #[cfg(feature = "v4-public")]
@@ -48,14 +46,12 @@ pub type SignedToken<V, F = (), E = crate::Json<()>> = crate::tokens::SecuredTok
 pub type UnsignedToken<V, M, F = (), E = crate::Json<()>> =
     crate::tokens::TokenBuilder<V, Public, M, F, E>;
 
-#[cfg(feature = "public")]
 impl<V: PublicVersion> crate::key::KeyType<V> for Public {
     type KeyLen = V::PublicKeySize;
     const KEY_HEADER: &'static str = "public.";
     const ID: &'static str = "pid.";
 }
 
-#[cfg(feature = "public")]
 impl<V: PublicVersion> crate::key::KeyType<V> for Secret {
     type KeyLen = V::SecretKeySize;
     const KEY_HEADER: &'static str = "secret.";

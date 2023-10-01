@@ -1,12 +1,12 @@
 use arbitrary::{Arbitrary, Result, Unstructured};
 
-#[cfg(feature = "local")]
+#[cfg(any(feature = "v3-local", feature = "v4-local"))]
 use crate::purpose::local::Local;
-#[cfg(feature = "public")]
+#[cfg(any(feature = "v3-public", feature = "v4-public"))]
 use crate::purpose::public::Secret;
-#[cfg(feature = "v3")]
+#[cfg(any(feature = "v3-local", feature = "v3-public"))]
 use crate::version::V3;
-#[cfg(feature = "v4")]
+#[cfg(any(feature = "v4-local", feature = "v4-public"))]
 use crate::version::V4;
 
 #[cfg(feature = "v3-local")]

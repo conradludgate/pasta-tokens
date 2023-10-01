@@ -1,6 +1,6 @@
-//! PBKD (Password-Based Key Wrapping).
-//! Derive a unique encryption key from a password, then use it to wrap the key.
+//! Password-Based Key Wrapping.
 //!
+//! Derive a unique encryption key from a password, then use it to wrap the key.
 //! <https://github.com/paseto-standard/paserk/blob/master/operations/PBKW.md>
 
 use std::{fmt, ops::DerefMut, str::FromStr};
@@ -37,7 +37,7 @@ use super::{read_b64, write_b64};
 /// use pasta_tokens::{
 ///     key::Key,
 ///     purpose::local::Local,
-///     paserk::pbkw::{PwWrappedKey, Argon2State},
+///     paserk::pbkw::PwWrappedKey,
 ///     version::V4
 /// };
 ///
@@ -58,7 +58,7 @@ use super::{read_b64, write_b64};
 /// use pasta_tokens::{
 ///     key::Key,
 ///     purpose::public::Secret,
-///     paserk::pbkw::{PwWrappedKey, Argon2State},
+///     paserk::pbkw::PwWrappedKey,
 ///     version::V4
 /// };
 ///
@@ -296,7 +296,7 @@ impl<V: PwVersion, K: PwWrapType<V>> fmt::Display for PwWrappedKey<V, K> {
     }
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-pbkw")]
 /// PBKDF2 parameters for V3 password wrapping
 pub struct Pbkdf2State {
     /// Defaults to 100,000 according to the PASERK PBKW specifications.
@@ -305,7 +305,7 @@ pub struct Pbkdf2State {
     pub iterations: u32,
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-pbkw")]
 impl Default for Pbkdf2State {
     fn default() -> Self {
         Self {
@@ -314,7 +314,7 @@ impl Default for Pbkdf2State {
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-pbkw")]
 /// Argon2 parameters for V4 password wrapping
 pub struct Argon2State {
     /// Defaults to 64 MiB
@@ -325,7 +325,7 @@ pub struct Argon2State {
     pub para: u32,
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-pbkw")]
 impl Default for Argon2State {
     fn default() -> Self {
         Self {
@@ -551,7 +551,6 @@ impl PwWrapType<V3> for Secret {
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U148>;
 }
 
-#[cfg(feature = "serde")]
 impl<V: PwVersion, K: PwWrapType<V>> serde::Serialize for PwWrappedKey<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -561,7 +560,6 @@ impl<V: PwVersion, K: PwWrapType<V>> serde::Serialize for PwWrappedKey<V, K> {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de, V: PwVersion, K: PwWrapType<V>> serde::Deserialize<'de> for PwWrappedKey<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

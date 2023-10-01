@@ -241,7 +241,6 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
     ///
     /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
     /// if it was provided at the time of creation.
-    #[cfg(feature = "local")]
     pub fn decrypt<M>(
         mut self,
         key: &SymmetricKey<V>,

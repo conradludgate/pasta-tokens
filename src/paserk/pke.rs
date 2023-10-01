@@ -510,7 +510,6 @@ pub mod fuzz_tests {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<V: SealedVersion> serde::Serialize for SealedKey<V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -520,7 +519,6 @@ impl<V: SealedVersion> serde::Serialize for SealedKey<V> {
     }
 }
 
-#[cfg(feature = "serde")]
 impl<'de, V: SealedVersion> serde::Deserialize<'de> for SealedKey<V> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

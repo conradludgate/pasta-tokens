@@ -9,7 +9,29 @@
 //! Paseto is everything you love about JOSE (JWT, JWE, JWS) without any of the [many design deficits that plague the JOSE standards](https://paragonie.com/blog/2017/03/jwt-json-web-tokens-is-bad-standard-that-everyone-should-avoid).
 //! See more about PASETO in the [specification](https://github.com/paseto-standard/paseto-spec)
 //!
-//! ### Examples
+//! ## Features
+//!
+//! * `v4`: Enables all V4 PASETO/PASERK functions.
+//!   - `v4-paseto`
+//!     - `v4-local`: V4 symmetric encrypted tokens
+//!     - `v4-public`: V4 asymmetric signed tokens
+//!   - `v4-paserk`
+//!     - `v4-id`: V4 Key IDs
+//!     - `v4-pke`: V4 Sealed Keys
+//!     - `v4-pbkw`: V4 Password wrapped keys
+//!     - `v4-wrap`: v4 Wrapped Keys
+//! * `v3`: Enables all V3 PASETO/PASERK functions.
+//!   - `v3-paseto`
+//!     - `v3-local`: V3 symmetric encrypted tokens
+//!     - `v3-public`: V3 asymmetric signed tokens
+//!   - `v3-paserk`
+//!     - `v3-id`: V3 Key IDs
+//!     - `v3-pke`: V3 Sealed Keys
+//!     - `v3-pbkw`: V3 Password wrapped keys
+//!     - `v3-wrap`: v3 Wrapped Keys
+//! * `arbitrary`: [`arbitrary`] support
+//!
+//! ## Examples
 //!
 //! ```
 //! use pasta_tokens::{
@@ -127,10 +149,9 @@ pub mod purpose {
         impl super::Purpose for Local {
             const HEADER: &'static str = "local";
         }
-        #[cfg(feature = "local")]
+
         mod impl_;
 
-        #[cfg(feature = "local")]
         pub use impl_::*;
 
         #[cfg(feature = "v4-local")]
@@ -154,7 +175,7 @@ pub mod purpose {
 
 pub mod key;
 
-#[cfg(feature = "paserk")]
+// #[cfg(feature = "paserk")]
 pub mod paserk;
 
 pub mod version {
@@ -237,10 +258,6 @@ pub mod encodings {
     }
 }
 
-// WIP
-// pub mod claims;
-
-#[cfg(any(feature = "local", feature = "public"))]
 mod pae;
 
 /// Encoding scheme for PASETO footers.
