@@ -6,9 +6,8 @@ PASETO implementation for Rust.
 
 ```rust
 use pasta_tokens::{
-    key::Key,
     purpose::public::{
-        Public, Secret, SignedToken, UnsignedToken, VerifiedToken,
+        Public, PublicKey, SecretKey, SignedToken, UnsignedToken, VerifiedToken,
     },
     version::V4,
     paserk::id::KeyId,
@@ -34,7 +33,7 @@ struct Payload {
 
 // load your secret key
 let secret_key = hex::decode("407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1d").unwrap();
-let secret_key = Key::from_secret_key(secret_key.try_into().unwrap());
+let secret_key = SecretKey::from_secret_key(secret_key.try_into().unwrap());
 
 let user_id = uuid::Uuid::new_v4();
 
@@ -58,7 +57,7 @@ println!("{token}");
 
 // load your public keys
 let public_key = hex::decode("b7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023").unwrap();
-let public_key = Key::from_public_key(&public_key).unwrap();
+let public_key = PublicKey::from_public_key(&public_key).unwrap();
 
 // keep a key cache of key IDs to public keys.
 // this will let you securely rotate your secret keys

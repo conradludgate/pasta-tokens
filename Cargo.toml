@@ -18,11 +18,6 @@ categories = [
 [features]
 default = []
 
-# Key sealing
-pke = []
-# Key wrapping
-wrap = []
-
 # V3 contains NIST approved algoritms only
 v3 = ["v3-paseto", "v3-paserk"]
 v3-paseto = ["v3-local", "v3-public"]
@@ -33,8 +28,8 @@ v3-public = ["dep:p384", "dep:ecdsa"]
 
 v3-id = ["dep:sha2"]
 v3-pbkw = ["dep:pbkdf2", "v3-local"]
-v3-pke = ["pke", "v3-local", "v3-public"]
-v3-wrap = ["wrap", "v3-local"]
+v3-pke = ["v3-local", "v3-public"]
+v3-wrap = ["v3-local"]
 
 # V4 is recommended
 v4 = ["v4-paseto", "v4-paserk"]
@@ -45,8 +40,8 @@ v4-local = ["dep:blake2", "dep:chacha20"]
 v4-public = ["dep:ed25519-dalek", "dep:curve25519-dalek"]
 v4-id = ["dep:blake2"]
 v4-pbkw = ["dep:argon2", "v4-local"]
-v4-pke = ["pke", "v4-local", "v4-public"]
-v4-wrap = ["wrap", "v4-local"]
+v4-pke = ["v4-local", "v4-public"]
+v4-wrap = ["v4-local"]
 
 arbitrary = ["dep:arbitrary"]
 

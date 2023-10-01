@@ -189,14 +189,10 @@ use cipher::Unsigned;
 
 use crate::PasetoError;
 
-// #[cfg(feature = "id")]
 pub mod id;
-// #[cfg(feature = "pbkw")]
 pub mod pbkw;
-#[cfg(feature = "pke")]
 pub mod pke;
 pub mod plaintext;
-#[cfg(feature = "wrap")]
 pub mod wrap;
 
 /// Whether the key serialization is safe to be added to a PASETO footer.
