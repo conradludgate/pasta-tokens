@@ -3,12 +3,16 @@ use std::fs;
 use libtest_mimic::{Arguments, Failed, Trial};
 use pasta_tokens::{
     key::Key,
-    paserk::pbkw::{PwVersion, PwWrapType, PwWrappedKey},
+    paserk::{
+        pbkw::{PwVersion, PwWrapType, PwWrappedKey},
+        pke::{SealedKey, SealedVersion},
+    },
     purpose::{
         local::Local,
         public::{Public, Secret},
     },
     version::{V3, V4},
+    PasetoError,
 };
 // use pasta_tokens::{
 //     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
@@ -25,7 +29,7 @@ fn main() {
     // IdTest::add_all_tests(&mut tests);
     // KeyTest::add_all_tests(&mut tests);
     PbkwTest::add_all_tests(&mut tests);
-    // PkeTest::add_all_tests(&mut tests);
+    PkeTest::add_all_tests(&mut tests);
     // PieWrapTest::add_all_tests(&mut tests);
 
     libtest_mimic::run(&args, tests).exit();
@@ -171,8 +175,11 @@ impl PbkwTest {
     }
 
     fn add_tests<V: PwVersion, K: PwWrapType<V>>(tests: &mut Vec<Trial>) {
-        let test_file: TestFile<Self> =
-            read_test(&dbg!(format!("{}.{}json", V::PASERK_HEADER, K::WRAP_HEADER)));
+        let test_file: TestFile<Self> = read_test(&dbg!(format!(
+            "{}.{}json",
+            V::PASERK_HEADER,
+            K::WRAP_HEADER
+        )));
         for test in test_file.tests {
             tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
         }
@@ -202,60 +209,60 @@ impl PbkwTest {
     }
 }
 
-// #[derive(Deserialize)]
-// struct PkeTest {
-//     #[serde(rename = "expect-fail")]
-//     expect_fail: bool,
-//     paserk: String,
-//     // comment: Option<String>,
-//     unsealed: Option<String>,
-//     #[serde(rename = "sealing-secret-key")]
-//     sealing_secret_key: String,
-// }
+#[derive(Deserialize)]
+struct PkeTest {
+    #[serde(rename = "expect-fail")]
+    expect_fail: bool,
+    paserk: String,
+    // comment: Option<String>,
+    unsealed: Option<String>,
+    #[serde(rename = "sealing-secret-key")]
+    sealing_secret_key: String,
+}
 
-// impl PkeTest {
-//     fn add_all_tests(tests: &mut Vec<Trial>) {
-//         Self::add_tests::<V3>(tests);
-//         Self::add_tests::<V4>(tests);
-//     }
+impl PkeTest {
+    fn add_all_tests(tests: &mut Vec<Trial>) {
+        Self::add_tests::<V3>(tests);
+        Self::add_tests::<V4>(tests);
+    }
 
-//     fn add_tests<V: SealedVersion>(tests: &mut Vec<Trial>)
-//     where
-//         Key<V, Secret>: NewKey2,
-//     {
-//         let test_file: TestFile<Self> = read_test(&format!("{}seal.json", V::KEY_HEADER));
-//         for test in test_file.tests {
-//             tests.push(Trial::test(test.name, || test.test_data.test::<V>()));
-//         }
-//     }
+    fn add_tests<V: SealedVersion>(tests: &mut Vec<Trial>)
+    where
+        Key<V, Secret>: NewKey2,
+    {
+        let test_file: TestFile<Self> = read_test(&format!("{}.seal.json", V::PASERK_HEADER));
+        for test in test_file.tests {
+            tests.push(Trial::test(test.name, || test.test_data.test::<V>()));
+        }
+    }
 
-//     fn test<V: SealedVersion>(self) -> Result<(), Failed>
-//     where
-//         Key<V, Secret>: NewKey2,
-//     {
-//         let result: Result<SealedKey<V>, PasetoError> = self.paserk.parse();
+    fn test<V: SealedVersion>(self) -> Result<(), Failed>
+    where
+        Key<V, Secret>: NewKey2,
+    {
+        let result: Result<SealedKey<V>, PasetoError> = self.paserk.parse();
 
-//         let sealed_key = match result {
-//             Ok(sealed_key) => sealed_key,
-//             Err(_) if self.expect_fail => return Ok(()),
-//             Err(e) => return Err(e.to_string().into()),
-//         };
+        let sealed_key = match result {
+            Ok(sealed_key) => sealed_key,
+            Err(_) if self.expect_fail => return Ok(()),
+            Err(e) => return Err(e.to_string().into()),
+        };
 
-//         let ssk = Key::from_key2(&self.sealing_secret_key);
-//         let key = match sealed_key.unseal(&ssk) {
-//             Ok(key) => key,
-//             Err(_) if self.expect_fail => return Ok(()),
-//             Err(e) => return Err(e.to_string().into()),
-//         };
+        let ssk = Key::from_key2(&self.sealing_secret_key);
+        let key = match sealed_key.unseal(&ssk) {
+            Ok(key) => key,
+            Err(_) if self.expect_fail => return Ok(()),
+            Err(e) => return Err(e.to_string().into()),
+        };
 
-//         let unsealed = hex::decode(self.unsealed.unwrap()).unwrap();
+        let unsealed = hex::decode(self.unsealed.unwrap()).unwrap();
 
-//         if key.as_ref() != unsealed {
-//             return Err("unseal failed".into());
-//         }
-//         Ok(())
-//     }
-// }
+        if key.as_ref() != unsealed {
+            return Err("unseal failed".into());
+        }
+        Ok(())
+    }
+}
 
 // #[derive(Deserialize)]
 // struct PieWrapTest {

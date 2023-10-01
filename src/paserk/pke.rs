@@ -12,15 +12,23 @@ use generic_array::{
     ArrayLength, GenericArray,
 };
 use rand::{rngs::OsRng, CryptoRng, RngCore};
-use rusty_paseto::core::PasetoError;
 use subtle::ConstantTimeEq;
 
-#[cfg(feature = "v3")]
-use rusty_paseto::core::V3;
-#[cfg(feature = "v4")]
-use rusty_paseto::core::V4;
+#[cfg(feature = "v3-pke")]
+use crate::version::V3;
+#[cfg(feature = "v4-pke")]
+use crate::version::V4;
+use crate::{
+    key::Key,
+    purpose::{
+        local::{Local, LocalVersion},
+        public::{Public, PublicVersion, Secret},
+    },
+    version::Version,
+    PasetoError,
+};
 
-use crate::{read_b64, write_b64, Key, Local, Public, Secret, Version};
+use super::{read_b64, write_b64};
 
 /// A local key encrypted with an asymmetric wrapping key.
 ///
@@ -43,7 +51,7 @@ use crate::{read_b64, write_b64, Key, Local, Public, Secret, Version};
 pub struct SealedKey<V: SealedVersion> {
     tag: GenericArray<u8, V::TagLen>,
     ephemeral_public_key: GenericArray<u8, V::EpkLen>,
-    encrypted_data_key: GenericArray<u8, V::Local>,
+    encrypted_data_key: GenericArray<u8, V::KeySize>,
 }
 
 impl<V> super::SafeForFooter for SealedKey<V> where V: SealedVersion {}
@@ -91,7 +99,7 @@ impl<V: SealedVersion> SealedKey<V> {
 }
 
 /// Version info for configuring key sealing
-pub trait SealedVersion: Version + Sized {
+pub trait SealedVersion: LocalVersion + PublicVersion + Sized {
     #[doc(hidden)]
     type TagLen: ArrayLength<u8>;
     #[doc(hidden)]
@@ -118,7 +126,7 @@ pub trait SealedVersion: Version + Sized {
     ) -> Result<Key<Self, Local>, PasetoError>;
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-pke")]
 impl SealedVersion for V3 {
     type TagLen = generic_array::typenum::U48;
     type EpkLen = generic_array::typenum::U49;
@@ -160,8 +168,8 @@ impl SealedVersion for V3 {
 
         let (ek, n) = sha2::Sha384::new()
             .chain_update([0x01])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.raw_secret_bytes())
             .chain_update(epk)
             .chain_update(sealing_key.as_ref())
@@ -170,21 +178,21 @@ impl SealedVersion for V3 {
 
         let ak = sha2::Sha384::new()
             .chain_update([0x02])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.raw_secret_bytes())
             .chain_update(epk)
             .chain_update(sealing_key.as_ref())
             .finalize();
 
-        let mut edk = GenericArray::<u8, <Self as Version>::Local>::default();
+        let mut edk = GenericArray::<u8, <Self as LocalVersion>::KeySize>::default();
         ctr::Ctr64BE::<aes::Aes256>::new(&ek, &n)
             .apply_keystream_inout(InOutBuf::new(plaintext_key.as_ref(), &mut edk).unwrap());
 
         let tag = hmac::Hmac::<sha2::Sha384>::new_from_slice(&ak)
             .unwrap()
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(epk)
             .chain_update(edk)
             .finalize()
@@ -216,8 +224,8 @@ impl SealedVersion for V3 {
 
         let ak = sha2::Sha384::new()
             .chain_update([0x02])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.raw_secret_bytes())
             .chain_update(sealed_key.ephemeral_public_key)
             .chain_update(pk)
@@ -225,8 +233,8 @@ impl SealedVersion for V3 {
 
         let tag = hmac::Hmac::<sha2::Sha384>::new_from_slice(&ak)
             .unwrap()
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(sealed_key.ephemeral_public_key)
             .chain_update(sealed_key.encrypted_data_key)
             .finalize()
@@ -234,13 +242,13 @@ impl SealedVersion for V3 {
 
         // step 6: Compare t2 with t, using a constant-time compare function. If it does not match, abort.
         if sealed_key.tag.ct_ne(&tag).into() {
-            return Err(PasetoError::InvalidSignature);
+            return Err(PasetoError::CryptoError);
         }
 
         let (ek, n) = sha2::Sha384::new()
             .chain_update([0x01])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.raw_secret_bytes())
             .chain_update(sealed_key.ephemeral_public_key)
             .chain_update(pk)
@@ -256,7 +264,7 @@ impl SealedVersion for V3 {
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-pke")]
 impl SealedVersion for V4 {
     type TagLen = generic_array::typenum::U32;
     type EpkLen = generic_array::typenum::U32;
@@ -306,8 +314,8 @@ impl SealedVersion for V4 {
 
         let ek = blake2::Blake2b::new()
             .chain_update([0x01])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.as_bytes())
             .chain_update(epk.as_bytes())
             .chain_update(xpk.as_bytes())
@@ -315,8 +323,8 @@ impl SealedVersion for V4 {
 
         let ak = blake2::Blake2b::<generic_array::typenum::U32>::new()
             .chain_update([0x02])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.as_bytes())
             .chain_update(epk.as_bytes())
             .chain_update(xpk.as_bytes())
@@ -327,14 +335,14 @@ impl SealedVersion for V4 {
             .chain_update(xpk.as_bytes())
             .finalize();
 
-        let mut edk = GenericArray::<u8, <Self as Version>::Local>::default();
+        let mut edk = GenericArray::<u8, <Self as LocalVersion>::KeySize>::default();
         chacha20::XChaCha20::new(&ek, &n)
             .apply_keystream_inout(InOutBuf::new(plaintext_key.as_ref(), &mut edk).unwrap());
 
         let tag = blake2::Blake2bMac::new_from_slice(&ak)
             .unwrap()
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(epk.as_bytes())
             .chain_update(edk)
             .finalize()
@@ -370,8 +378,8 @@ impl SealedVersion for V4 {
 
         let ak = blake2::Blake2b::<generic_array::typenum::U32>::new()
             .chain_update([0x02])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.as_bytes())
             .chain_update(epk.as_bytes())
             .chain_update(xpk.as_bytes())
@@ -379,8 +387,8 @@ impl SealedVersion for V4 {
 
         let t2 = blake2::Blake2bMac::<generic_array::typenum::U32>::new_from_slice(&ak)
             .unwrap()
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(epk.as_bytes())
             .chain_update(sealed_key.encrypted_data_key)
             .finalize()
@@ -388,13 +396,13 @@ impl SealedVersion for V4 {
 
         // step 6: Compare t2 with t, using a constant-time compare function. If it does not match, abort.
         if sealed_key.tag.ct_ne(&t2).into() {
-            return Err(PasetoError::InvalidSignature);
+            return Err(PasetoError::CryptoError);
         }
 
         let ek = blake2::Blake2b::new()
             .chain_update([0x01])
-            .chain_update(Self::KEY_HEADER)
-            .chain_update("seal.")
+            .chain_update(Self::PASERK_HEADER)
+            .chain_update(".seal.")
             .chain_update(xk.as_bytes())
             .chain_update(epk.as_bytes())
             .chain_update(xpk.as_bytes())
@@ -417,9 +425,9 @@ impl<V: SealedVersion> FromStr for SealedKey<V> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s
-            .strip_prefix(V::KEY_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
-        let s = s.strip_prefix("seal.").ok_or(PasetoError::WrongHeader)?;
+            .strip_prefix(V::PASERK_HEADER)
+            .ok_or(PasetoError::InvalidToken)?;
+        let s = s.strip_prefix(".seal.").ok_or(PasetoError::InvalidToken)?;
 
         let total = read_b64::<GenericArray<u8, V::TotalLen>>(s)?;
 
@@ -429,8 +437,8 @@ impl<V: SealedVersion> FromStr for SealedKey<V> {
 
 impl<V: SealedVersion> fmt::Display for SealedKey<V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(V::KEY_HEADER)?;
-        f.write_str("seal.")?;
+        f.write_str(V::PASERK_HEADER)?;
+        f.write_str(".seal.")?;
 
         write_b64(&V::join_total(self), f)
     }
@@ -438,9 +446,12 @@ impl<V: SealedVersion> fmt::Display for SealedKey<V> {
 
 #[cfg(any(test, fuzzing))]
 pub mod fuzz_tests {
-    use rusty_paseto::core::{V3, V4};
-
-    use crate::{fuzzing::FakeRng, Key, Local, Secret};
+    use crate::{
+        fuzzing::FakeRng,
+        key::Key,
+        purpose::{local::Local, public::Secret},
+        version::{V3, V4},
+    };
 
     #[derive(Debug)]
     #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]

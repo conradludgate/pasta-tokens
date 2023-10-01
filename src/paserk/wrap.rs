@@ -5,6 +5,11 @@
 
 use std::{fmt, ops::DerefMut, str::FromStr};
 
+use crate::{
+    key::{Key, KeyType},
+    purpose::local::SymmetricKey,
+    PasetoError,
+};
 use cipher::{KeyInit, KeyIvInit, StreamCipher};
 use digest::{Mac, OutputSizeUser};
 use generic_array::{
@@ -13,7 +18,6 @@ use generic_array::{
     GenericArray,
 };
 use rand::{rngs::OsRng, CryptoRng, RngCore};
-use crate::{PasetoError, key::{KeyType, Key}, purpose::local::SymmetricKey};
 
 #[cfg(feature = "v3")]
 use crate::version::V3;

@@ -384,7 +384,7 @@ impl std::fmt::Display for PasetoError {
             PasetoError::Base64DecodeError => f.write_str("The token could not be base64 decoded"),
             PasetoError::InvalidKey => f.write_str("Could not parse the key"),
             PasetoError::InvalidToken => f.write_str("Could not parse the token"),
-            PasetoError::CryptoError => f.write_str("Token signature could not be validated")
+            PasetoError::CryptoError => f.write_str("Token signature could not be validated"),
         }
     }
 }

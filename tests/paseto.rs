@@ -83,7 +83,9 @@ impl PasetoTest {
             } => {
                 let key = SymmetricKey::<V>::from_key(&key);
 
-                let Ok(token): Result<EncryptedToken::<V, Vec<u8>>, _> = token.parse() else { return Ok(()) };
+                let Ok(token): Result<EncryptedToken<V, Vec<u8>>, _> = token.parse() else {
+                    return Ok(());
+                };
                 assert_eq!(token.footer(), footer.as_bytes());
 
                 match token.decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes()) {
@@ -129,7 +131,9 @@ impl PasetoTest {
             } => {
                 let public_key = PublicKey::<V>::from_key(&public_key);
 
-                let Ok(token): Result<SignedToken::<V, Vec<u8>>, _> = token.parse() else { return Ok(()) };
+                let Ok(token): Result<SignedToken<V, Vec<u8>>, _> = token.parse() else {
+                    return Ok(());
+                };
                 assert_eq!(token.footer(), footer.as_bytes());
 
                 match token.verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())
