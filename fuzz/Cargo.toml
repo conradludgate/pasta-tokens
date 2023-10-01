@@ -27,13 +27,6 @@ features = [
     "test"
 ]
 
-# Prevent this from interfering with workspaces
-[workspace]
-members = ["."]
-
-[profile.release]
-debug = 1
-
 [[bin]]
 name = "seal_v3"
 path = "fuzz_targets/seal_v3.rs"

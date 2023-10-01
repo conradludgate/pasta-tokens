@@ -2,6 +2,7 @@
 name = "pasta-tokens"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.64.0"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
 repository = "https://github.com/conradludgate/pasta-tokens"
 description = "Platform Agnostic SEcurity TOkens (PASETO) is a secure alternative to JOSE/JWT"
@@ -14,6 +15,9 @@ categories = [
   "network-programming",
   "web-programming",
 ]
+
+[workspace]
+members = ["fuzz"]
 
 [features]
 default = []
@@ -101,6 +105,9 @@ libtest-mimic = "0.6.1"
 opt-level = 2
 debug = false
 incremental = false
+
+[profile.release]
+debug = 1
 
 [[test]]
 name = "paseto-test-vectors"
