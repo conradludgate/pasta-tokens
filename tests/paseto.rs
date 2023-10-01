@@ -2,7 +2,9 @@ use std::fs;
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use pasta_tokens::purpose::local::{EncryptedToken, LocalVersion, SymmetricKey, UnencryptedToken};
-use pasta_tokens::purpose::public::{PublicKey, PublicVersion, SecretKey, SignedToken};
+use pasta_tokens::purpose::public::{
+    PublicKey, PublicVersion, SecretKey, SignedToken, UnsignedToken,
+};
 use pasta_tokens::version::{V3, V4};
 use serde::{
     de::{DeserializeOwned, Visitor},
@@ -166,7 +168,8 @@ impl PasetoTest {
                 let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
                 assert_eq!(token.message, payload);
 
-                let token = token
+                let token = UnsignedToken::<V, _>::new(token.message)
+                    .with_footer(token.footer)
                     .sign(&secret_key, implicit_assertion.as_bytes())
                     .unwrap();
 

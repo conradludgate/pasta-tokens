@@ -1,7 +1,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use pasta_tokens::{paserk::wrap::PieWrappedKey, version::V4, purpose::public::Secret};
+use pasta_tokens::{paserk::wrap::PieWrappedKey, purpose::public::Secret, version::V4};
 use std::str::FromStr;
 
 fuzz_target!(|data: &str| {

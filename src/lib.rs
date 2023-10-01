@@ -415,6 +415,16 @@ impl std::fmt::Display for PasetoError {
 pub mod fuzzing {
     use rand::{CryptoRng, RngCore};
 
+    use crate::purpose::local::{DecryptedToken, EncryptedToken, Local, LocalVersion};
+    use crate::purpose::public::{Secret, SignedToken, UnsignedToken, VerifiedToken};
+    use crate::version::{V3, V4};
+    use crate::{
+        key::{Key, KeyType},
+        purpose::local::UnencryptedToken,
+        version::Version,
+        Json,
+    };
+
     #[derive(Clone, Debug)]
     /// a consistent rng store
     pub struct FakeRng<const N: usize> {
@@ -463,10 +473,87 @@ pub mod fuzzing {
     // not really
     impl<const N: usize> CryptoRng for FakeRng<N> {}
 
-    // pub mod seal {
-    //     pub use crate::pke::fuzz_tests::{V3SealInput, V4SealInput};
-    // }
-    // pub mod wrap {
-    //     pub use crate::wrap::fuzz_tests::FuzzInput;
-    // }
+    #[derive(Debug)]
+    pub struct FuzzInput<V: Version, K: KeyType<V>> {
+        key: Key<V, K>,
+        ephemeral: FakeRng<32>,
+        data1: String,
+        data2: String,
+        data3: String,
+    }
+
+    #[cfg(feature = "arbitrary")]
+    impl<'a, V: Version, K: KeyType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
+    where
+        Key<V, K>: arbitrary::Arbitrary<'a>,
+    {
+        fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+            Ok(Self {
+                key: u.arbitrary()?,
+                ephemeral: u.arbitrary()?,
+                data1: u.arbitrary()?,
+                data2: u.arbitrary()?,
+                data3: u.arbitrary()?,
+            })
+        }
+    }
+
+    #[derive(serde::Deserialize, serde::Serialize)]
+    struct Data {
+        data: String,
+    }
+
+    impl<V: LocalVersion> FuzzInput<V, Local> {
+        pub fn run(self) {
+            let token = UnencryptedToken::<V, Data>::new(Data {
+                data: self.data1.clone(),
+            })
+            .with_footer(Json(Data {
+                data: self.data2.clone(),
+            }))
+            .encrypt_with_nonce(&self.key, self.ephemeral.bytes, self.data3.as_bytes())
+            .unwrap();
+            let token: EncryptedToken<V, Json<Data>> = token.to_string().parse().unwrap();
+            assert_eq!(token.unverified_footer().0.data, self.data2);
+            let token: DecryptedToken<V, Data, Json<Data>> =
+                token.decrypt(&self.key, self.data3.as_bytes()).unwrap();
+            assert_eq!(token.message.data, self.data1);
+        }
+    }
+    impl FuzzInput<V3, Secret> {
+        pub fn run(self) {
+            let token = UnsignedToken::<V3, Data>::new(Data {
+                data: self.data1.clone(),
+            })
+            .with_footer(Json(Data {
+                data: self.data2.clone(),
+            }))
+            .sign(&self.key, self.data3.as_bytes())
+            .unwrap();
+            let token: SignedToken<V3, Json<Data>> = token.to_string().parse().unwrap();
+            assert_eq!(token.unverified_footer().0.data, self.data2);
+            let token: VerifiedToken<V3, Data, Json<Data>> = token
+                .verify(&self.key.public_key(), self.data3.as_bytes())
+                .unwrap();
+            assert_eq!(token.message.data, self.data1);
+        }
+    }
+    impl FuzzInput<V4, Secret> {
+        pub fn run(self) {
+            let token = UnsignedToken::<V4, Data>::new(Data {
+                data: self.data1.clone(),
+            })
+            .with_footer(Json(Data {
+                data: self.data2.clone(),
+            }))
+            .sign(&self.key, self.data3.as_bytes())
+            .unwrap();
+            let token: SignedToken<V4, Json<Data>> = token.to_string().parse().unwrap();
+            assert_eq!(token.unverified_footer().0.data, self.data2);
+            let token: VerifiedToken<V4, Data, Json<Data>> = token
+                .verify(&self.key.public_key(), self.data3.as_bytes())
+                .unwrap();
+            assert_eq!(token.message.data, self.data1);
+        }
+    }
 }

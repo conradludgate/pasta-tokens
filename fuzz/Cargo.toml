@@ -10,6 +10,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = { version = "0.4", features = ["arbitrary-derive"] }
 rand = "0.8.5"
+serde = { version = "1", features = ["derive"] }
 
 [dependencies.pasta-tokens]
 path = ".."
@@ -23,6 +24,7 @@ features = [
     "v4-public",
     "v4-pke",
     "v4-wrap",
+    "test"
 ]
 
 # Prevent this from interfering with workspaces
@@ -89,5 +91,53 @@ doc = false
 [[bin]]
 name = "local_wrap_v3_parse"
 path = "fuzz_targets/local_wrap_v3_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "public_v3_parse"
+path = "fuzz_targets/public_v3_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "public_v4_parse"
+path = "fuzz_targets/public_v4_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "local_v3_parse"
+path = "fuzz_targets/local_v3_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "local_v4_parse"
+path = "fuzz_targets/local_v4_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "public_v3"
+path = "fuzz_targets/public_v3.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "public_v4"
+path = "fuzz_targets/public_v4.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "local_v3"
+path = "fuzz_targets/local_v3.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "local_v4"
+path = "fuzz_targets/local_v4.rs"
 test = false
 doc = false

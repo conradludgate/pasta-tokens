@@ -39,7 +39,7 @@ pub trait PublicVersion: Version {
     ) -> Result<(), signature::Error>;
 }
 
-impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> VerifiedToken<V, M, F, E> {
+impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, F, E> {
     /// Sign this token
     ///
     /// ### Implicit Assertions
@@ -55,16 +55,16 @@ impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> VerifiedToken<V, M, 
         key: &SecretKey<V>,
         implicit_assertions: &[u8],
     ) -> Result<SignedToken<V, F, E>, Box<dyn std::error::Error>> {
-        let mut m = self.meta.encoding.encode(&self.message)?;
-        let f = self.footer.encode();
+        let mut m = self.0.meta.encoding.encode(&self.0.message)?;
+        let f = self.0.footer.encode();
         let sig = V::sign(&key.key, E::SUFFIX.as_bytes(), &m, &f, implicit_assertions);
         m.extend_from_slice(&sig);
 
         Ok(SignedToken {
-            meta: self.meta,
+            meta: self.0.meta,
             payload: m,
             encoded_footer: f,
-            footer: self.footer,
+            footer: self.0.footer,
         })
     }
 }
