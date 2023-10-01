@@ -62,6 +62,7 @@ use super::{read_b64, write_b64};
 /// assert_eq!(key, key2);
 /// ```
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct SealedKey<V: SealedVersion> {
     tag: GenericArray<u8, V::TagLen>,
     ephemeral_public_key: GenericArray<u8, V::EpkLen>,

@@ -181,11 +181,11 @@ pub mod version {
     //! Versions of PASETO. Supports [`V3`] or [`V4`]
 
     /// PASETO Version 3 (NIST)
-    #[derive(Default, Debug)]
+    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct V3;
 
     /// PASETO Version 4 (Sodium)
-    #[derive(Default, Debug)]
+    #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
     pub struct V4;
 
     /// General information about a PASETO/PASERK version.
@@ -237,9 +237,9 @@ pub mod encodings {
     /// Payload encoding implementation. Currently only supports [`Json`]
     pub trait MessageEncoding<M>: PayloadEncoding {
         /// Encode the message
-        fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error>>;
+        fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>;
         /// Decode the message
-        fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error>>;
+        fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error + Send + Sync>>;
     }
 
     impl PayloadEncoding for Json<()> {
@@ -247,11 +247,11 @@ pub mod encodings {
     }
 
     impl<M: Serialize + DeserializeOwned> MessageEncoding<M> for Json<()> {
-        fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
             serde_json::to_vec(s).map_err(From::from)
         }
 
-        fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error>> {
+        fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error + Send + Sync>> {
             serde_json::from_slice(from).map_err(From::from)
         }
     }
@@ -269,7 +269,7 @@ pub trait Footer: Sized {
     /// Encode the footer to bytes
     fn encode(&self) -> Vec<u8>;
     /// Decode the footer from bytes
-    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error>>;
+    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 /// `Json` is a type wrapper to implement `Footer` for all types that implement
@@ -291,7 +291,7 @@ impl<T: serde::Serialize + serde::de::DeserializeOwned> Footer for Json<T> {
         serde_json::to_vec(&self.0).expect("json serialization should not panic")
     }
 
-    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         match footer {
             x if x.is_empty() => Err("missing footer".into()),
             x => serde_json::from_slice(x).map(Self).map_err(|e| e.into()),
@@ -304,7 +304,7 @@ impl Footer for Vec<u8> {
         self.clone()
     }
 
-    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Ok(footer.to_owned())
     }
 }
@@ -314,7 +314,7 @@ impl Footer for () {
         Vec::new()
     }
 
-    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
+    fn decode(footer: &[u8]) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         match footer {
             x if x.is_empty() => Ok(()),
             x => Err(format!("unexpected footer {x:?}").into()),
@@ -439,6 +439,49 @@ pub mod tokens {
         }
     }
 
+    impl<V: version::Version, K: purpose::Purpose, F, E: PayloadEncoding> serde::Serialize
+        for SecuredToken<V, K, F, E>
+    {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            serializer.collect_str(self)
+        }
+    }
+
+    impl<'de, V: version::Version, K: purpose::Purpose, F: Footer, E: PayloadEncoding>
+        serde::Deserialize<'de> for SecuredToken<V, K, F, E>
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            struct FromStrVisitor<V, T, F, E>(std::marker::PhantomData<(V, T, F, E)>);
+            impl<'de, V: version::Version, K: purpose::Purpose, F: Footer, E: PayloadEncoding>
+                serde::de::Visitor<'de> for FromStrVisitor<V, K, F, E>
+            {
+                type Value = SecuredToken<V, K, F, E>;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    write!(
+                        formatter,
+                        "a \"{}.{}.\" paseto",
+                        V::PASETO_HEADER,
+                        K::HEADER,
+                    )
+                }
+                fn visit_str<Err>(self, v: &str) -> Result<Self::Value, Err>
+                where
+                    Err: serde::de::Error,
+                {
+                    v.parse().map_err(Err::custom)
+                }
+            }
+            deserializer.deserialize_str(FromStrVisitor(std::marker::PhantomData))
+        }
+    }
+
     impl<V: version::Version, T: purpose::Purpose, F: Footer, E: PayloadEncoding> std::str::FromStr
         for SecuredToken<V, T, F, E>
     {
@@ -497,7 +540,7 @@ pub enum PasetoError {
     /// Could not verify/decrypt the PASETO/PASERK.
     CryptoError,
     /// There was an error with payload processing
-    PayloadError(Box<dyn std::error::Error>),
+    PayloadError(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl std::error::Error for PasetoError {
