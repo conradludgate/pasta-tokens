@@ -517,14 +517,14 @@ impl PwWrapType<V3> for Local {
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U132>;
 }
 
-#[cfg(feature = "v4-pbkw")]
+#[cfg(all(feature = "v4-pbkw", feature = "v4-public"))]
 impl PwWrapType<V4> for Secret {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U120>;
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U152>;
 }
 
-#[cfg(feature = "v3-pbkw")]
+#[cfg(all(feature = "v3-pbkw", feature = "v3-public"))]
 impl PwWrapType<V3> for Secret {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U100>;

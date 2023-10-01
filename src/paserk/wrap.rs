@@ -7,7 +7,11 @@ use std::{fmt, ops::DerefMut, str::FromStr};
 
 use crate::{
     key::{Key, KeyType},
-    purpose::local::SymmetricKey,
+    purpose::{
+        local::{Local, LocalVersion, SymmetricKey},
+        public::Secret,
+    },
+    version::Version,
     PasetoError,
 };
 use cipher::{KeyInit, KeyIvInit, StreamCipher};
@@ -19,11 +23,13 @@ use generic_array::{
 };
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-wrap")]
 use crate::version::V3;
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-wrap")]
 use crate::version::V4;
 use subtle::ConstantTimeEq;
+
+use super::{read_b64, write_b64};
 
 /// Paragon Initiative Enterprises standard key-wrapping
 ///
@@ -149,7 +155,8 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
         // step 6: Calculate the authentication tag `t`
         let tag = <V::TagMac as Mac>::new_from_slice(&ak[..32])
             .unwrap()
-            .chain_update(V::KEY_HEADER)
+            .chain_update(V::PASERK_HEADER)
+            .chain_update(".")
             .chain_update(K::WRAP_HEADER)
             .chain_update("pie.")
             .chain_update(n)
@@ -222,7 +229,8 @@ where
         // step 3: Recalculate the authentication tag t2
         let tag2 = <V::TagMac as Mac>::new_from_slice(&ak[..32])
             .unwrap()
-            .chain_update(V::KEY_HEADER)
+            .chain_update(V::PASERK_HEADER)
+            .chain_update(".")
             .chain_update(K::WRAP_HEADER)
             .chain_update("pie.")
             .chain_update(nonce)
@@ -232,7 +240,7 @@ where
 
         // step 4: Compare t with t2 in constant-time. If it doesn't match, abort.
         if tag.ct_ne(&tag2).into() {
-            return Err(PasetoError::InvalidSignature);
+            return Err(PasetoError::CryptoError);
         }
 
         // step 5: Derive the encryption key `Ek` and XChaCha nonce `n2`
@@ -252,7 +260,9 @@ where
         // asserted by type signature
 
         // step 8: return ptk
-        Ok(Key { key: wrapped_key })
+        Ok(Key {
+            key: Box::new(wrapped_key),
+        })
     }
 }
 
@@ -261,12 +271,13 @@ impl<V: PieVersion, K: PieWrapType<V>> FromStr for PieWrappedKey<V, K> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s
-            .strip_prefix(V::KEY_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
+            .strip_prefix(V::PASERK_HEADER)
+            .ok_or(PasetoError::InvalidToken)?;
+        let s = s.strip_prefix('.').ok_or(PasetoError::InvalidToken)?;
         let s = s
             .strip_prefix(K::WRAP_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
-        let s = s.strip_prefix("pie.").ok_or(PasetoError::WrongHeader)?;
+            .ok_or(PasetoError::InvalidToken)?;
+        let s = s.strip_prefix("pie.").ok_or(PasetoError::InvalidToken)?;
 
         let total = read_b64::<K::Output>(s)?;
 
@@ -283,7 +294,8 @@ impl<V: PieVersion, K: PieWrapType<V>> FromStr for PieWrappedKey<V, K> {
 
 impl<V: PieVersion, K: PieWrapType<V>> fmt::Display for PieWrappedKey<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(V::KEY_HEADER)?;
+        f.write_str(V::PASERK_HEADER)?;
+        f.write_str(".")?;
         f.write_str(K::WRAP_HEADER)?;
         f.write_str("pie.")?;
 
@@ -295,7 +307,7 @@ impl<V: PieVersion, K: PieWrapType<V>> fmt::Display for PieWrappedKey<V, K> {
 }
 
 /// Version info for configuring PIE Key wrapping
-pub trait PieVersion: Version {
+pub trait PieVersion: Version + LocalVersion {
     #[doc(hidden)]
     type Cipher: StreamCipher + KeyIvInit;
     #[doc(hidden)]
@@ -326,7 +338,7 @@ pub trait PieVersion: Version {
     ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>);
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-wrap")]
 impl PieVersion for V3 {
     type Cipher = ctr::Ctr64BE<aes::Aes256>;
     type AuthKeyMac = hmac::Hmac<sha2::Sha384>;
@@ -339,11 +351,11 @@ impl PieVersion for V3 {
     fn split_enc_key(
         ek: digest::Output<Self::EncKeyMac>,
     ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
-        ek.split()
+        Split::split(ek)
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-wrap")]
 impl PieVersion for V4 {
     type Cipher = chacha20::XChaCha20;
     type AuthKeyMac = blake2::Blake2bMac<U32>;
@@ -356,7 +368,7 @@ impl PieVersion for V4 {
     fn split_enc_key(
         ek: digest::Output<Self::EncKeyMac>,
     ) -> (cipher::Key<Self::Cipher>, cipher::Iv<Self::Cipher>) {
-        ek.split()
+        Split::split(ek)
     }
 }
 
@@ -389,28 +401,28 @@ pub trait PieWrapType<V: PieVersion>: KeyType<V> + WrapType {
         + Concat<u8, Self::KeyLen, Rest = GenericArray<u8, Self::KeyLen>, Output = Self::Output>;
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-wrap")]
 impl PieWrapType<V3> for Local {
     // 32 + 48 + 32 = 112
     type Output = GenericArray<u8, generic_array::typenum::U112>;
     type TagIv = <V3 as PieVersion>::TagIv;
 }
 
-#[cfg(feature = "v3")]
+#[cfg(all(feature = "v3-wrap", feature = "v3-public"))]
 impl PieWrapType<V3> for Secret {
     // 32 + 48 + 48 = 128
     type Output = GenericArray<u8, generic_array::typenum::U128>;
     type TagIv = <V3 as PieVersion>::TagIv;
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-wrap")]
 impl PieWrapType<V4> for Local {
     // 32 + 32 + 32 = 96
     type Output = GenericArray<u8, generic_array::typenum::U96>;
     type TagIv = <V4 as PieVersion>::TagIv;
 }
 
-#[cfg(feature = "v4")]
+#[cfg(all(feature = "v4-wrap", feature = "v4-public"))]
 impl PieWrapType<V4> for Secret {
     // 32 + 32 + 64 = 128
     type Output = GenericArray<u8, generic_array::typenum::U128>;
@@ -419,7 +431,7 @@ impl PieWrapType<V4> for Secret {
 
 #[cfg(any(test, fuzzing))]
 pub mod fuzz_tests {
-    use crate::{fuzzing::FakeRng, Key, Local};
+    use crate::{fuzzing::FakeRng, key::Key, purpose::local::SymmetricKey};
 
     use super::{PieVersion, PieWrapType};
 

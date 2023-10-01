@@ -167,6 +167,7 @@ pub mod id;
 pub mod pbkw;
 #[cfg(feature = "pke")]
 pub mod pke;
+pub mod plaintext;
 #[cfg(feature = "wrap")]
 pub mod wrap;
 

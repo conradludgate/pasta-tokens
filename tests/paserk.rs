@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, str::FromStr};
 
 use libtest_mimic::{Arguments, Failed, Trial};
 use pasta_tokens::{
@@ -7,6 +7,8 @@ use pasta_tokens::{
         id::KeyId,
         pbkw::{PwVersion, PwWrapType, PwWrappedKey},
         pke::{SealedKey, SealedVersion},
+        plaintext::PlaintextKey,
+        wrap::{PieVersion, PieWrapType, PieWrappedKey},
     },
     purpose::{
         local::Local,
@@ -15,11 +17,6 @@ use pasta_tokens::{
     version::{Version, V3, V4},
     PasetoError,
 };
-// use pasta_tokens::{
-//     internal::{PieVersion, PieWrapType, PwVersion, PwWrapType, SealedVersion},
-//     Key, KeyId, KeyType, Local, PasetoError, PieWrappedKey, PlaintextKey, Public, PwWrappedKey,
-//     SealedKey, Secret, Version, V3, V4,
-// };
 use serde::{de::DeserializeOwned, Deserialize};
 
 fn main() {
@@ -28,10 +25,10 @@ fn main() {
     let mut tests = vec![];
 
     IdTest::add_all_tests(&mut tests);
-    // KeyTest::add_all_tests(&mut tests);
+    KeyTest::add_all_tests(&mut tests);
     PbkwTest::add_all_tests(&mut tests);
     PkeTest::add_all_tests(&mut tests);
-    // PieWrapTest::add_all_tests(&mut tests);
+    PieWrapTest::add_all_tests(&mut tests);
 
     libtest_mimic::run(&args, tests).exit();
 }
@@ -102,60 +99,61 @@ impl IdTest {
     }
 }
 
-// #[derive(Deserialize)]
-// struct KeyTest {
-//     paserk: Option<String>,
-//     key: Option<String>,
-//     comment: Option<String>,
-// }
+#[derive(Deserialize)]
+struct KeyTest {
+    paserk: Option<String>,
+    key: Option<String>,
+    comment: Option<String>,
+}
 
-// impl KeyTest {
-//     fn add_all_tests(tests: &mut Vec<Trial>) {
-//         Self::add_tests::<V3, Local>(tests);
-//         Self::add_tests::<V4, Local>(tests);
-//         Self::add_tests::<V3, Secret>(tests);
-//         Self::add_tests::<V4, Secret>(tests);
-//         Self::add_tests::<V3, Public>(tests);
-//         Self::add_tests::<V4, Public>(tests);
-//     }
+impl KeyTest {
+    fn add_all_tests(tests: &mut Vec<Trial>) {
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
+        Self::add_tests::<V3, Public>(tests);
+        Self::add_tests::<V4, Public>(tests);
+    }
 
-//     fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
-//     where
-//         Key<V, K>: NewKey,
-//     {
-//         let test_file: TestFile<Self> = read_test(&format!("{}{}json", V::KEY_HEADER, K::HEADER));
-//         for test in test_file.tests {
-//             tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
-//         }
-//     }
+    fn add_tests<V: Version, K: KeyType<V>>(tests: &mut Vec<Trial>)
+    where
+        Key<V, K>: NewKey,
+    {
+        let test_file: TestFile<Self> =
+            read_test(&format!("{}.{}json", V::PASERK_HEADER, K::KEY_HEADER));
+        for test in test_file.tests {
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
+        }
+    }
 
-//     fn test<V: Version, K: KeyType<V>>(self) -> Result<(), Failed>
-//     where
-//         Key<V, K>: NewKey,
-//     {
-//         match (self.key, self.paserk) {
-//             (Some(key), Some(paserk)) => {
-//                 let key2: PlaintextKey<V, K> = paserk.parse().unwrap();
-//                 let key = Key::<V, K>::from_key(&key);
+    fn test<V: Version, K: KeyType<V>>(self) -> Result<(), Failed>
+    where
+        Key<V, K>: NewKey,
+    {
+        match (self.key, self.paserk) {
+            (Some(key), Some(paserk)) => {
+                let key2: PlaintextKey<V, K> = paserk.parse().unwrap();
+                let key = Key::<V, K>::from_key(&key);
 
-//                 let paserk2 = PlaintextKey(key.clone()).to_string();
-//                 if key != key2.0 {
-//                     return Err("decode failed".into());
-//                 }
-//                 if paserk != paserk2 {
-//                     return Err("encode failed".into());
-//                 }
-//                 Ok(())
-//             }
-//             (None, Some(paserk)) => match PlaintextKey::<V, K>::from_str(&paserk) {
-//                 Ok(_) => Err(self.comment.unwrap().into()),
-//                 Err(_) => Ok(()),
-//             },
-//             (Some(_), None) => Ok(()),
-//             (None, None) => Ok(()),
-//         }
-//     }
-// }
+                let paserk2 = PlaintextKey(key.clone()).to_string();
+                if key != key2.0 {
+                    return Err("decode failed".into());
+                }
+                if paserk != paserk2 {
+                    return Err("encode failed".into());
+                }
+                Ok(())
+            }
+            (None, Some(paserk)) => match PlaintextKey::<V, K>::from_str(&paserk) {
+                Ok(_) => Err(self.comment.unwrap().into()),
+                Err(_) => Ok(()),
+            },
+            (Some(_), None) => Ok(()),
+            (None, None) => Ok(()),
+        }
+    }
+}
 
 #[derive(Deserialize)]
 struct PbkwTest {
@@ -262,64 +260,64 @@ impl PkeTest {
     }
 }
 
-// #[derive(Deserialize)]
-// struct PieWrapTest {
-//     #[serde(rename = "expect-fail")]
-//     expect_fail: bool,
-//     paserk: String,
-//     comment: Option<String>,
-//     unwrapped: Option<String>,
-//     #[serde(rename = "wrapping-key")]
-//     wrapping_key: String,
-// }
+#[derive(Deserialize)]
+struct PieWrapTest {
+    #[serde(rename = "expect-fail")]
+    expect_fail: bool,
+    paserk: String,
+    comment: Option<String>,
+    unwrapped: Option<String>,
+    #[serde(rename = "wrapping-key")]
+    wrapping_key: String,
+}
 
-// impl PieWrapTest {
-//     fn add_all_tests(tests: &mut Vec<Trial>) {
-//         Self::add_tests::<V3, Local>(tests);
-//         Self::add_tests::<V4, Local>(tests);
-//         Self::add_tests::<V3, Secret>(tests);
-//         Self::add_tests::<V4, Secret>(tests);
-//     }
+impl PieWrapTest {
+    fn add_all_tests(tests: &mut Vec<Trial>) {
+        Self::add_tests::<V3, Local>(tests);
+        Self::add_tests::<V4, Local>(tests);
+        Self::add_tests::<V3, Secret>(tests);
+        Self::add_tests::<V4, Secret>(tests);
+    }
 
-//     fn add_tests<V: PieVersion, K: PieWrapType<V>>(tests: &mut Vec<Trial>)
-//     where
-//         Key<V, Local>: NewKey,
-//     {
-//         let test_file: TestFile<Self> =
-//             read_test(&format!("{}{}pie.json", V::KEY_HEADER, K::WRAP_HEADER));
-//         for test in test_file.tests {
-//             tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
-//         }
-//     }
+    fn add_tests<V: PieVersion, K: PieWrapType<V>>(tests: &mut Vec<Trial>)
+    where
+        Key<V, Local>: NewKey,
+    {
+        let test_file: TestFile<Self> =
+            read_test(&format!("{}.{}pie.json", V::PASERK_HEADER, K::WRAP_HEADER));
+        for test in test_file.tests {
+            tests.push(Trial::test(test.name, || test.test_data.test::<V, K>()));
+        }
+    }
 
-//     fn test<V: PieVersion, K: PieWrapType<V>>(self) -> Result<(), Failed>
-//     where
-//         Key<V, Local>: NewKey,
-//     {
-//         let wrapping_key = Key::<V, Local>::from_key(&self.wrapping_key);
+    fn test<V: PieVersion, K: PieWrapType<V>>(self) -> Result<(), Failed>
+    where
+        Key<V, Local>: NewKey,
+    {
+        let wrapping_key = Key::<V, Local>::from_key(&self.wrapping_key);
 
-//         let wrapped_key: PieWrappedKey<V, K> = match self.paserk.parse() {
-//             Ok(wrapped_key) => wrapped_key,
-//             Err(_) if self.expect_fail => return Ok(()),
-//             Err(e) => return Err(e.to_string().into()),
-//         };
+        let wrapped_key: PieWrappedKey<V, K> = match self.paserk.parse() {
+            Ok(wrapped_key) => wrapped_key,
+            Err(_) if self.expect_fail => return Ok(()),
+            Err(e) => return Err(e.to_string().into()),
+        };
 
-//         if self.expect_fail {
-//             match wrapped_key.unwrap_key(&wrapping_key) {
-//                 Err(_) => Ok(()),
-//                 Ok(_) => Err(self.comment.unwrap().into()),
-//             }
-//         } else {
-//             let unwrapped = hex::decode(self.unwrapped.unwrap()).unwrap();
+        if self.expect_fail {
+            match wrapped_key.unwrap_key(&wrapping_key) {
+                Err(_) => Ok(()),
+                Ok(_) => Err(self.comment.unwrap().into()),
+            }
+        } else {
+            let unwrapped = hex::decode(self.unwrapped.unwrap()).unwrap();
 
-//             match wrapped_key.unwrap_key(&wrapping_key) {
-//                 Err(err) => Err(err.to_string().into()),
-//                 Ok(key) if key.as_ref() != unwrapped => Err("key mismatch".into()),
-//                 Ok(_) => Ok(()),
-//             }
-//         }
-//     }
-// }
+            match wrapped_key.unwrap_key(&wrapping_key) {
+                Err(err) => Err(err.to_string().into()),
+                Ok(key) if key.as_ref() != unwrapped => Err("key mismatch".into()),
+                Ok(_) => Ok(()),
+            }
+        }
+    }
+}
 
 trait NewKey {
     fn from_key(s: &str) -> Self;
