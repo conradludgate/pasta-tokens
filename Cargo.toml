@@ -16,20 +16,39 @@ categories = [
 ]
 
 [features]
-default = ["v3-local", "v4-local", "v3-public", "v4-public"]
+default = ["v4-public", "v4-local", "v3-public", "v3-local", "v3-pbkw", "v4-pbkw"]
 
+# docsrs = []
 local = []
 public = []
+
+paserk = []
+# Key id hashes
+id = ["paserk"]
+# Password based key wrapping
+pbkw = ["paserk"]
+# Key sealing
+pke = ["paserk"]
+# Key wrapping
+wrap = ["paserk"]
 
 # V3 contains NIST approved algoritms only
 v3 = []
 v3-local = ["v3", "local", "aes", "ctr", "hkdf", "hmac", "sha2"]
 v3-public = ["v3", "public", "p384", "ecdsa"]
+v3-id = ["v3", "id"]
+v3-pbkw = ["v3", "pbkw", "pbkdf2"]
+v3-pke = ["v3", "pke"]
+v3-wrap = ["v3", "wrap"]
 
 # V4 is recommended
 v4 = []
 v4-local = ["v4", "local", "blake2", "chacha20"]
 v4-public = ["v4", "public", "ed25519-dalek", "curve25519-dalek"]
+v4-id = ["v4", "id"]
+v4-pbkw = ["v4", "pbkw", "argon2"]
+v4-pke = ["v4", "pke"]
+v4-wrap = ["v4", "wrap"]
 
 test = []
 
@@ -52,6 +71,7 @@ ed25519-dalek = { version = "2.0.0", features = [
   "digest",
 ], optional = true }
 curve25519-dalek = { version = "4.0.0", optional = true }
+argon2 = { version = "0.5.0", optional = true }
 
 # V3
 aes = { version = "0.8.2", optional = true }
@@ -65,6 +85,7 @@ p384 = { version = "0.13.0", optional = true, features = [
 ] }
 ecdsa = { version = "0.16.0", optional = true, features = ["digest", "hazmat"] }
 hkdf = { version = "0.12.3", optional = true }
+pbkdf2 = { version = "0.12.1", optional = true }
 
 arbitrary = { version = "1.3", features = ["derive"], optional = true }
 
@@ -85,8 +106,13 @@ debug = false
 incremental = false
 
 [[test]]
-name = "test-vectors"
-path = "tests/vectors.rs"
+name = "paseto-test-vectors"
+path = "tests/paseto.rs"
+harness = false
+
+[[test]]
+name = "paserk-test-vectors"
+path = "tests/paserk.rs"
 harness = false
 
 # Properly document all features on docs.rs

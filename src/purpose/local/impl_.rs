@@ -13,36 +13,12 @@ use subtle::ConstantTimeEq;
 use crate::{
     encodings::{MessageEncoding, PayloadEncoding},
     key::KeyType,
+    purpose::Purpose,
     version::Version,
     Bytes, Footer, TokenMetadata,
 };
 
-use super::Purpose;
-
-/// A symmetric key for `local` encrypted tokens
-pub type SymmetricKey<V> = crate::key::Key<V, Local>;
-
-/// An decrypted PASETO.
-pub type DecryptedToken<V, M, F = (), E = crate::Json<()>> =
-    crate::tokens::ValidatedToken<V, Local, M, F, E>;
-/// An encrypted PASETO.
-pub type EncryptedToken<V, F = (), E = crate::Json<()>> =
-    crate::tokens::SecuredToken<V, Local, F, E>;
-/// An unencrypted PASETO.
-pub type UnencryptedToken<V, M, F = (), E = crate::Json<()>> =
-    crate::tokens::TokenBuilder<V, Local, M, F, E>;
-
-/// PASETO local encryption
-///
-/// Example use cases:
-/// * Tamper-proof, short-lived immutable data stored on client machines.
-///   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
-#[derive(Debug, Default)]
-pub struct Local;
-
-impl Purpose for Local {
-    const HEADER: &'static str = "local";
-}
+use super::{DecryptedToken, EncryptedToken, Local, SymmetricKey, UnencryptedToken};
 
 impl<V: LocalVersion> KeyType<V> for Local {
     type KeyLen = V::KeySize;
@@ -51,7 +27,7 @@ impl<V: LocalVersion> KeyType<V> for Local {
 }
 
 /// General information about a PASETO/PASERK version
-trait LocalEncryption: LocalVersion {
+pub(crate) trait LocalEncryption: LocalVersion {
     type AuthKeySize: ArrayLength<u8>;
     type Cipher: GenericCipher;
     type Mac: Kdf<Self::AuthKeySize>
@@ -90,15 +66,15 @@ pub trait LocalVersion: Version {
     ) -> Result<(), ()>;
 }
 
-trait GenericMac<OutputSize: ArrayLength<u8>> {
+pub(crate) trait GenericMac<OutputSize: ArrayLength<u8>> {
     type Mac: digest::Mac<OutputSize = OutputSize> + KeyInit;
 }
 
-trait Kdf<OutputSize: ArrayLength<u8>> {
+pub(crate) trait Kdf<OutputSize: ArrayLength<u8>> {
     fn mac<const N: usize>(key: &[u8], info: [&[u8]; N]) -> Bytes<OutputSize>;
 }
 
-trait GenericCipher {
+pub(crate) trait GenericCipher {
     type KeyIvPair: ArrayLength<u8>;
     type Stream: cipher::StreamCipher;
     fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream;
@@ -136,7 +112,7 @@ fn generic_digest<V: LocalEncryption>(
     mac.finalize().into_bytes()
 }
 
-fn generic_encrypt<V: LocalEncryption>(
+pub(crate) fn generic_encrypt<V: LocalEncryption>(
     key: &Bytes<V::KeySize>,
     encoding_header: &[u8],
     nonce: &[u8],
@@ -156,7 +132,7 @@ fn generic_encrypt<V: LocalEncryption>(
     generic_digest::<V>(&ak, encoding_header, nonce, message, footer, implicit)
 }
 
-fn generic_decrypt<V: LocalEncryption>(
+pub(crate) fn generic_decrypt<V: LocalEncryption>(
     key: &Bytes<V::KeySize>,
     encoding_header: &[u8],
     nonce: &[u8],
@@ -181,14 +157,6 @@ fn generic_decrypt<V: LocalEncryption>(
         Ok(())
     }
 }
-
-#[cfg(feature = "v3-local")]
-#[cfg_attr(docsrs, doc(cfg(feature = "v3-local")))]
-mod v3;
-
-#[cfg(feature = "v4-local")]
-#[cfg_attr(docsrs, doc(cfg(feature = "v4-local")))]
-mod v4;
 
 impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> DecryptedToken<V, M, F, E> {
     fn encrypt_inner(
@@ -273,6 +241,7 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
     ///
     /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
     /// if it was provided at the time of creation.
+    #[cfg(feature = "local")]
     pub fn decrypt<M>(
         mut self,
         key: &SymmetricKey<V>,

@@ -489,7 +489,6 @@ pub mod fuzz_tests {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<V: SealedVersion> serde::Serialize for SealedKey<V> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -500,7 +499,6 @@ impl<V: SealedVersion> serde::Serialize for SealedKey<V> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<'de, V: SealedVersion> serde::Deserialize<'de> for SealedKey<V> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

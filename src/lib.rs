@@ -1,4 +1,4 @@
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(feature = "docsrs", feature(doc_auto_cfg))]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 //! PASETO - **P**latform **A**gnostic **Se**curity **To**kens.
@@ -14,11 +14,50 @@ type Bytes<N> = generic_array::GenericArray<u8, N>;
 pub mod purpose {
     //! Purpose of the PASETO. Supports either [`local`] or [`public`]
 
-    #[cfg(feature = "local")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "local")))]
-    pub mod local;
-    #[cfg(feature = "public")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "public")))]
+    pub mod local {
+        //! PASETO shared-key authenticated encryption
+        //!
+        //! Example use cases:
+        //! * Tamper-proof, short-lived immutable data stored on client machines.
+        //!   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
+
+        /// A symmetric key for `local` encrypted tokens
+        pub type SymmetricKey<V> = crate::key::Key<V, Local>;
+
+        /// An decrypted PASETO.
+        pub type DecryptedToken<V, M, F = (), E = crate::Json<()>> =
+            crate::tokens::ValidatedToken<V, Local, M, F, E>;
+        /// An encrypted PASETO.
+        pub type EncryptedToken<V, F = (), E = crate::Json<()>> =
+            crate::tokens::SecuredToken<V, Local, F, E>;
+        /// An unencrypted PASETO.
+        pub type UnencryptedToken<V, M, F = (), E = crate::Json<()>> =
+            crate::tokens::TokenBuilder<V, Local, M, F, E>;
+
+        /// PASETO shared-key authenticated encryption
+        ///
+        /// Example use cases:
+        /// * Tamper-proof, short-lived immutable data stored on client machines.
+        ///   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
+        #[derive(Debug, Default)]
+        pub struct Local;
+
+        impl super::Purpose for Local {
+            const HEADER: &'static str = "local";
+        }
+        #[cfg(feature = "local")]
+        mod impl_;
+
+        #[cfg(feature = "local")]
+        pub use impl_::*;
+
+        #[cfg(feature = "v4-local")]
+        mod v4;
+
+        #[cfg(feature = "v3-local")]
+        mod v3;
+    }
+
     pub mod public;
 
     /// Purpose of the PASETO.
@@ -33,16 +72,17 @@ pub mod purpose {
 
 pub mod key;
 
+#[cfg(feature = "paserk")]
+pub mod paserk;
+
 pub mod version {
     //! Versions of PASETO. Supports [`V3`] or [`V4`]
 
     /// PASETO Version 3 (NIST)
-    #[cfg(feature = "v3")]
     #[derive(Default)]
     pub struct V3;
 
     /// PASETO Version 4 (Sodium)
-    #[cfg(feature = "v4")]
     #[derive(Default)]
     pub struct V4;
 
@@ -56,22 +96,18 @@ pub mod version {
         const PASERK_HEADER: &'static str;
     }
 
-    #[cfg(feature = "v3")]
     impl Version for V3 {
         const PASETO_HEADER: &'static str = "v3";
         const PASERK_HEADER: &'static str = "k3";
     }
 
-    #[cfg(feature = "v4")]
     impl Version for V4 {
         const PASETO_HEADER: &'static str = "v4";
         const PASERK_HEADER: &'static str = "k4";
     }
 
-    #[cfg(feature = "v3")]
     impl crate::sealed::Sealed for V3 {}
 
-    #[cfg(feature = "v4")]
     impl crate::sealed::Sealed for V4 {}
 }
 
@@ -332,9 +368,25 @@ pub mod tokens {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum PasetoError {
     Base64DecodeError,
     InvalidKey,
+    InvalidToken,
+    CryptoError,
+}
+
+impl std::error::Error for PasetoError {}
+
+impl std::fmt::Display for PasetoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PasetoError::Base64DecodeError => f.write_str("The token could not be base64 decoded"),
+            PasetoError::InvalidKey => f.write_str("Could not parse the key"),
+            PasetoError::InvalidToken => f.write_str("Could not parse the token"),
+            PasetoError::CryptoError => f.write_str("Token signature could not be validated")
+        }
+    }
 }
 
 #[cfg(any(test, fuzzing))]

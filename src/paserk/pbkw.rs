@@ -15,14 +15,20 @@ use generic_array::{
 use rand::{CryptoRng, RngCore};
 
 use rand::rngs::OsRng;
-use rusty_paseto::core::PasetoError;
-#[cfg(feature = "v3")]
-use rusty_paseto::core::V3;
-#[cfg(feature = "v4")]
-use rusty_paseto::core::V4;
 use subtle::ConstantTimeEq;
 
-use crate::{read_b64, write_b64, Key, KeyType, Local, Secret, Version};
+#[cfg(feature = "v3-pbkw")]
+use crate::version::V3;
+#[cfg(feature = "v4-pbkw")]
+use crate::version::V4;
+use crate::{
+    key::{Key, KeyType},
+    purpose::{local::Local, public::Secret},
+    version::Version,
+    PasetoError,
+};
+
+use super::{read_b64, write_b64};
 
 /// Password wrapped keys
 ///
@@ -154,7 +160,8 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
 
         let tag = <V::TagMac as Mac>::new_from_slice(&ak)
             .unwrap()
-            .chain_update(V::KEY_HEADER)
+            .chain_update(V::PASERK_HEADER)
+            .chain_update(b".")
             .chain_update(K::WRAP_HEADER)
             .chain_update(&*salt)
             .chain_update(V::encode_state(&settings))
@@ -185,7 +192,8 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
 
         let tag = <V::TagMac as Mac>::new_from_slice(&ak)
             .unwrap()
-            .chain_update(V::KEY_HEADER)
+            .chain_update(V::PASERK_HEADER)
+            .chain_update(b".")
             .chain_update(K::WRAP_HEADER)
             .chain_update(&*self.salt)
             .chain_update(V::encode_state(&self.state))
@@ -196,7 +204,7 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
 
         // step 4: Compare t with t2 in constant-time. If it doesn't match, abort.
         if tag.ct_ne(&self.tag).into() {
-            return Err(PasetoError::InvalidSignature);
+            return Err(PasetoError::CryptoError);
         }
 
         let ek = <V::KeyHash as Digest>::new()
@@ -223,11 +231,12 @@ impl<V: PwVersion, K: PwWrapType<V>> FromStr for PwWrappedKey<V, K> {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s
-            .strip_prefix(V::KEY_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
+            .strip_prefix(V::PASERK_HEADER)
+            .ok_or(PasetoError::InvalidToken)?;
+        let s = s.strip_prefix('.').ok_or(PasetoError::InvalidToken)?;
         let s = s
             .strip_prefix(K::WRAP_HEADER)
-            .ok_or(PasetoError::WrongHeader)?;
+            .ok_or(PasetoError::InvalidToken)?;
 
         let total = read_b64::<K::SaltStateIvEdkTag>(s)?;
 
@@ -249,7 +258,8 @@ impl<V: PwVersion, K: PwWrapType<V>> FromStr for PwWrappedKey<V, K> {
 
 impl<V: PwVersion, K: PwWrapType<V>> fmt::Display for PwWrappedKey<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(V::KEY_HEADER)?;
+        f.write_str(V::PASERK_HEADER)?;
+        f.write_str(".")?;
         f.write_str(K::WRAP_HEADER)?;
 
         let output: K::SaltStateIv = self
@@ -411,7 +421,7 @@ pub trait PwWrapType<V: PwVersion>: KeyType<V> + PwType {
         + Default;
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-pbkw")]
 impl PwVersion for V3 {
     type Cipher = ctr::Ctr64BE<aes::Aes256>;
     type KeyHash = sha2::Sha384;
@@ -429,7 +439,7 @@ impl PwVersion for V3 {
     }
 
     fn split_ek(ek: digest::Output<Self::KeyHash>) -> cipher::Key<Self::Cipher> {
-        let (ek, _) = ek.split();
+        let (ek, _) = Split::split(ek);
         ek
     }
 
@@ -442,7 +452,7 @@ impl PwVersion for V3 {
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-pbkw")]
 impl PwVersion for V4 {
     type Cipher = chacha20::XChaCha20;
     type KeyHash = blake2::Blake2b<U32>;
@@ -491,35 +501,34 @@ impl PwVersion for V4 {
     }
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-pbkw")]
 impl PwWrapType<V4> for Local {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U88>;
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U120>;
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-pbkw")]
 impl PwWrapType<V3> for Local {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U84>;
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U132>;
 }
 
-#[cfg(feature = "v4")]
+#[cfg(feature = "v4-pbkw")]
 impl PwWrapType<V4> for Secret {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U120>;
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U152>;
 }
 
-#[cfg(feature = "v3")]
+#[cfg(feature = "v3-pbkw")]
 impl PwWrapType<V3> for Secret {
     type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
     type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U100>;
     type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U148>;
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<V: PwVersion, K: PwWrapType<V>> serde::Serialize for PwWrappedKey<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -530,7 +539,6 @@ impl<V: PwVersion, K: PwWrapType<V>> serde::Serialize for PwWrappedKey<V, K> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<'de, V: PwVersion, K: PwWrapType<V>> serde::Deserialize<'de> for PwWrappedKey<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

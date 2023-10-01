@@ -3,13 +3,16 @@ use std::{fmt, marker::PhantomData, str::FromStr};
 use base64::URL_SAFE_NO_PAD;
 use generic_array::{typenum::U33, GenericArray};
 
-use rusty_paseto::core::PasetoError;
-#[cfg(feature = "v3")]
-use rusty_paseto::core::V3;
-#[cfg(feature = "v4")]
-use rusty_paseto::core::V4;
+use crate::{
+    key::{Key, KeyType},
+    version::Version,
+    PasetoError,
+};
 
-use crate::{write_b64, Key, KeyType, Version};
+#[cfg(feature = "v3")]
+use crate::version::V3;
+#[cfg(feature = "v4")]
+use crate::version::V4;
 
 /// Unique ID for a key
 ///
@@ -180,7 +183,6 @@ where
 {
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<V: Version, K: KeyType<V>> serde::Serialize for KeyId<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -191,7 +193,6 @@ impl<V: Version, K: KeyType<V>> serde::Serialize for KeyId<V, K> {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<'de, V: Version, K: KeyType<V>> serde::Deserialize<'de> for KeyId<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

@@ -155,3 +155,52 @@
 //! ```
 //!
 //! See the [`PwWrappedKey`] type for more info.
+
+use base64ct::Encoding;
+use cipher::Unsigned;
+
+use crate::PasetoError;
+
+#[cfg(feature = "id")]
+pub mod id;
+#[cfg(feature = "pbkw")]
+pub mod pbkw;
+#[cfg(feature = "pke")]
+pub mod pke;
+#[cfg(feature = "wrap")]
+pub mod wrap;
+
+/// Whether the key serialization is safe to be added to a PASETO footer.
+pub trait SafeForFooter {}
+
+fn write_b64<W: std::fmt::Write>(b: &[u8], w: &mut W) -> std::fmt::Result {
+    let mut buffer = [0; 64];
+    for chunk in b.chunks(48) {
+        let s = base64ct::Base64UrlUnpadded::encode(chunk, &mut buffer).unwrap();
+        w.write_str(s)?;
+    }
+    Ok(())
+}
+
+fn read_b64<
+    L: generic_array::sequence::GenericSequence<u8> + core::ops::DerefMut<Target = [u8]> + Default,
+>(
+    s: &str,
+) -> Result<L, PasetoError> {
+    let expected_len = (s.len() + 3) / 4 * 3;
+    if expected_len < <L::Length as Unsigned>::USIZE {
+        return Err(PasetoError::Base64DecodeError);
+    }
+
+    let mut total = L::default();
+
+    let len = base64ct::Base64UrlUnpadded::decode(s, &mut total)
+        .map_err(|_| PasetoError::Base64DecodeError)?
+        .len();
+
+    if len != <L::Length as Unsigned>::USIZE {
+        return Err(PasetoError::Base64DecodeError);
+    }
+
+    Ok(total)
+}

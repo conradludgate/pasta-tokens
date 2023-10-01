@@ -13,15 +13,13 @@ use generic_array::{
     GenericArray,
 };
 use rand::{rngs::OsRng, CryptoRng, RngCore};
-use rusty_paseto::core::PasetoError;
+use crate::{PasetoError, key::{KeyType, Key}, purpose::local::SymmetricKey};
 
 #[cfg(feature = "v3")]
-use rusty_paseto::core::V3;
+use crate::version::V3;
 #[cfg(feature = "v4")]
-use rusty_paseto::core::V4;
+use crate::version::V4;
 use subtle::ConstantTimeEq;
-
-use crate::{read_b64, write_b64, Key, KeyType, Local, Secret, Version};
 
 /// Paragon Initiative Enterprises standard key-wrapping
 ///
@@ -103,7 +101,7 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     /// let secret_key2 = wrapped_secret.unwrap_key(&wrapping_key).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
-    pub fn wrap_pie(&self, wrapping_key: &Key<V, Local>) -> PieWrappedKey<V, K> {
+    pub fn wrap_pie(&self, wrapping_key: &SymmetricKey<V>) -> PieWrappedKey<V, K> {
         self.wrap_pie_with_rng(wrapping_key, &mut OsRng)
     }
 
@@ -112,7 +110,7 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
     /// Using the given RNG source for the IV
     pub fn wrap_pie_with_rng(
         &self,
-        wrapping_key: &Key<V, Local>,
+        wrapping_key: &SymmetricKey<V>,
         rng: &mut (impl RngCore + CryptoRng),
     ) -> PieWrappedKey<V, K> {
         // step 1: Enforce Algorithm Lucidity
@@ -201,7 +199,7 @@ where
     /// let secret_key2 = wrapped_secret.unwrap_key(&wrapping_key).unwrap();
     /// assert_eq!(secret_key, secret_key2);
     /// ```
-    pub fn unwrap_key(self, wrapping_key: &Key<V, Local>) -> Result<Key<V, K>, PasetoError> {
+    pub fn unwrap_key(self, wrapping_key: &SymmetricKey<V>) -> Result<Key<V, K>, PasetoError> {
         let Self {
             mut wrapped_key,
             nonce,
@@ -423,7 +421,7 @@ pub mod fuzz_tests {
 
     #[derive(Debug)]
     pub struct FuzzInput<V: PieVersion, K: PieWrapType<V>> {
-        wrapping_key: Key<V, Local>,
+        wrapping_key: SymmetricKey<V>,
         key: Key<V, K>,
         ephemeral: FakeRng<32>,
     }
@@ -431,7 +429,7 @@ pub mod fuzz_tests {
     #[cfg(feature = "arbitrary")]
     impl<'a, V: PieVersion, K: PieWrapType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
     where
-        Key<V, Local>: arbitrary::Arbitrary<'a>,
+        SymmetricKey<V>: arbitrary::Arbitrary<'a>,
         Key<V, K>: arbitrary::Arbitrary<'a>,
     {
         fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
@@ -457,7 +455,6 @@ pub mod fuzz_tests {
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<V: PieVersion, K: PieWrapType<V>> serde::Serialize for PieWrappedKey<V, K> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -468,7 +465,6 @@ impl<V: PieVersion, K: PieWrapType<V>> serde::Serialize for PieWrappedKey<V, K> 
     }
 }
 
-#[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 #[cfg(feature = "serde")]
 impl<'de, V: PieVersion, K: PieWrapType<V>> serde::Deserialize<'de> for PieWrappedKey<V, K> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
