@@ -1,77 +1,84 @@
-# rusty_paserk
+# pasta_tokens
 
-An extension of [`rusty_paseto`](https://github.com/rrrodzilla/rusty_paseto) adding the [Platform Agnostic Serializable Keys](https://github.com/paseto-standard/paserk) specifications on top.
+PASETO implementation for Rust.
 
 ## Examples
 
-### Local Wrapping
-
 ```rust
-use rusty_paserk::wrap::{Pie, LocalWrapperExt};
-use rusty_paseto::core::{PasetoSymmetricKey, V4, Local, Key};
+use pasta_tokens::{
+    key::Key,
+    purpose::public::{
+        Public, Secret, SignedToken, UnsignedToken, VerifiedToken,
+    },
+    version::V4,
+    paserk::id::KeyId,
+    Json,
+};
 
-let wrapping_key = PasetoSymmetricKey::<V4, Local>::from(Key::try_new_random().unwrap());
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Footer {
+    /// The ID of the key used to sign the PASETO.
+    /// A footer should only contain types that are `SafeForFooter`
+    kid: KeyId<V4, Public>,
+}
 
-let local_key = PasetoSymmetricKey::from(Key::try_new_random().unwrap());
-let nonce = Key::try_new_random().unwrap();
-let wrapped_local = Pie::wrap_local(&local_key, &wrapping_key, &nonce);
-// => "k4.local-wrap.pie.RcAvOxHI0H-0uMsIl6KGcplH_tDlOhW1omFwXltZCiynHeRNH0hmn28AkN516h3WHuAReH3CvQ2SZ6mevnTquPETSd3XnlcbRWACT5GLWcus3BsD4IFWm9wFZgNF7C_E"
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Payload {
+    /// The expiration date of the token
+    #[serde(with = "time::serde::rfc3339", rename = "exp")]
+    expiration: time::OffsetDateTime,
+    /// The subject of the token
+    #[serde(rename = "sub")]
+    user_id: uuid::Uuid,
+}
 
-let mut wrapped_local = wrapped_local.into_bytes();
-let local_key2 = Pie::unwrap_local(&mut wrapped_local, &wrapping_key).unwrap();
-assert_eq!(local_key.as_ref(), local_key2.as_ref());
-```
+// load your secret key
+let secret_key = hex::decode("407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1d").unwrap();
+let secret_key = Key::from_secret_key(secret_key.try_into().unwrap());
 
-### Secret Wrapping
+let user_id = uuid::Uuid::new_v4();
 
-```rust
-use rusty_paserk::wrap::{Pie, SecretWrapperExt};
-use rusty_paseto::core::{PasetoSymmetricKey, PasetoAsymmetricPrivateKey, V4, Key};
+// create the token payload and footer.
+let token = UnsignedToken::new_v4_public(Payload {
+        // expires in 1 hour
+        expiration: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+        user_id,
+    })
+    .with_footer(Json(Footer {
+        kid: secret_key.public_key().to_id(),
+    }))
+    // sign with the secret key
+    .sign(&secret_key, &[])
+    .unwrap()
+    .to_string();
 
-let wrapping_key = PasetoSymmetricKey::from(Key::try_new_random().unwrap());
+// Send off the token to the client
+println!("{token}");
+// "v4.public.eyJleHAiOiIyMDIzLTEwLTAxVDE0OjQ4OjI2LjM0NjA5MloiLCJzdWIiOiIxOTBhZjFmYS1lZGVlLTRiNGUtOGQxMC05ZmUwZjQ1ZGQ5OTQifXo-Vsr45NroJZ9pLkuN3xcxgFncGF3eject5GdZH7WwTEfCgmo6hD-zNh0txsLvZi1vC601oNCgXq_2cK4XKQw.eyJraWQiOiJrNC5waWQuQUdQQ09CUkI4UHowQ3dNOFFfQnNVUEw0OF8zZjRUbE0yc2Z0R3Y0ejkzVFkifQ"
 
-let secret_key = Key::try_new_random().unwrap();
-let secret_key = PasetoAsymmetricPrivateKey::from(&secret_key);
-let nonce = Key::try_new_random().unwrap();
-let wrapped_secret = Pie::wrap_secret(&secret_key, &wrapping_key, &nonce);
-// => "k4.secret-wrap.pie.cTTnZwzBA3AKBugQCzmctv5R9CjyPOlelG9SLZrhupDwk6vYx-3UQFCZ7x4d57KU4K4U1qJeFP6ELzkMJ0s8qHt0hsQkW14Ni6TJ89MRzEqglUgI6hJD-EF2E9kIFO5YuC5MHwXN7Wi_vG1S3L-OoTjZgT_ZJ__8T7SJhvYLodo"
+// load your public keys
+let public_key = hex::decode("b7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023").unwrap();
+let public_key = Key::from_public_key(&public_key).unwrap();
 
-let mut wrapped_secret = wrapped_secret.into_bytes();
-let secret_key2 = Pie::unwrap_secret(&mut wrapped_secret, &wrapping_key).unwrap();
-assert_eq!(secret_key.as_ref(), secret_key2.as_ref());
-```
+// keep a key cache of key IDs to public keys.
+// this will let you securely rotate your secret keys
+// and still validate multiple public keys safely
+let keys = std::collections::HashMap::from([
+    (public_key.to_id(), public_key)
+]);
 
-### Local IDs
+// Parse the token from the client
+let token: SignedToken<V4, Json<Footer>> = token.parse().expect("should be a valid token format");
 
-```rust
-use rusty_paserk::id::EncodeId;
-use rusty_paseto::core::{PasetoSymmetricKey, V4, Local, Key};
+// using the key ID, search for the public key
+let key = &keys[&token.unverified_footer().0.kid];
 
-let local_key = PasetoSymmetricKey::<V4, Local>::from(Key::try_new_random().unwrap());
-let kid = local_key.encode_id();
-// => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
-```
+// verify the token signature
+let token: VerifiedToken<V4, Payload, _> = token.verify(key, &[]).expect("token should be signed by us");
 
-### Secret IDs
+// check if the token has expired
+assert!(token.message.expiration > time::OffsetDateTime::now_utc());
 
-```rust
-use rusty_paserk::id::EncodeId;
-use rusty_paseto::core::{PasetoAsymmetricPrivateKey, V4, Public, Key};
-
-let secret_key = Key::try_new_random().unwrap();
-let secret_key = PasetoAsymmetricPrivateKey::<V4, Public>::from(&secret_key);
-let kid = secret_key.encode_id();
-// => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
-```
-
-### Public IDs
-
-```rust
-use rusty_paserk::id::EncodeId;
-use rusty_paseto::core::{PasetoAsymmetricPublicKey, V4, Public, Key};
-
-let public_key = Key::try_new_random().unwrap();
-let public_key = PasetoAsymmetricPublicKey::<V4, Public>::from(&public_key);
-let kid = public_key.encode_id();
-// => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
+// proceed to use the payload as you wish!
+assert_eq!(token.message.user_id, user_id);
 ```

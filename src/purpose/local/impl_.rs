@@ -112,6 +112,7 @@ fn generic_digest<V: LocalEncryption>(
     mac.finalize().into_bytes()
 }
 
+#[allow(dead_code)]
 pub(crate) fn generic_encrypt<V: LocalEncryption>(
     key: &Bytes<V::KeySize>,
     encoding_header: &[u8],
@@ -132,6 +133,7 @@ pub(crate) fn generic_encrypt<V: LocalEncryption>(
     generic_digest::<V>(&ak, encoding_header, nonce, message, footer, implicit)
 }
 
+#[allow(dead_code)]
 pub(crate) fn generic_decrypt<V: LocalEncryption>(
     key: &Bytes<V::KeySize>,
     encoding_header: &[u8],

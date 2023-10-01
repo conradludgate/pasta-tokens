@@ -24,6 +24,7 @@ impl WriteBytes for Vec<u8> {
     }
 }
 
+#[allow(dead_code)]
 pub fn pae<const N: usize>(pieces: [&[&[u8]]; N], out: &mut impl WriteBytes) {
     out.update(&(N as u64).to_le_bytes());
     for piece in pieces {
