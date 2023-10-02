@@ -229,3 +229,79 @@ fn read_b64<
 
     Ok(total)
 }
+
+/// PASERK V4 using only algorithms that are provided by libsodium
+pub mod k4 {
+    use crate::version::V4;
+    /// A key encoded in base64. It is not a secure serialization.
+    pub type PlaintextKey<P> = super::plaintext::PlaintextKey<V4, P>;
+    /// Unique ID for a key
+    ///
+    /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
+    ///
+    /// # Local IDs
+    /// ```
+    /// use pasta_tokens::{paserk::k4, v4, purpose::local::Local};
+    ///
+    /// let local_key = v4::SymmetricKey::new_os_random();
+    /// let kid: k4::KeyId<Local> = local_key.to_id();
+    /// // kid.to_string() => "k4.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
+    /// ```
+    ///
+    /// # Public/Secret IDs
+    /// ```
+    /// use pasta_tokens::{paserk::k4, v4, purpose::public::{Public, Secret}};
+    ///
+    /// let secret_key = v4::SecretKey::new_os_random();
+    /// let kid: k4::KeyId<Secret> = secret_key.to_id();
+    /// // kid.to_string() => "k4.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
+    ///
+    /// let kid: k4::KeyId<Public> = secret_key.public_key().to_id();
+    /// // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
+    /// ```
+    pub type KeyId<P> = super::id::KeyId<V4, P>;
+    /// Password wrapped keys
+    pub type PwWrappedKey<P> = super::pbkw::PwWrappedKey<V4, P>;
+    /// A local key encrypted with an asymmetric wrapping key.
+    pub type SealedKey = super::pke::SealedKey<V4>;
+    /// Paragon Initiative Enterprises standard symmetric key-wrapping
+    pub type PieWrappedKey<P> = super::wrap::PieWrappedKey<V4, P>;
+}
+
+/// PASERK V3 using only NIST approved algorithms
+pub mod k3 {
+    use crate::version::V3;
+    /// A key encoded in base64. It is not a secure serialization.
+    pub type PlaintextKey<P> = super::plaintext::PlaintextKey<V3, P>;
+    /// Unique ID for a key
+    ///
+    /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
+    ///
+    /// # Local IDs
+    /// ```
+    /// use pasta_tokens::{paserk::k3, v3, purpose::local::Local};
+    ///
+    /// let local_key = v3::SymmetricKey::new_os_random();
+    /// let kid: k3::KeyId<Local> = local_key.to_id();
+    /// // kid.to_string() => "k3.lid.XxPub51WIAEmbVTmrs-lFoFodxTSKk8RuYEJk3gl-DYB"
+    /// ```
+    ///
+    /// # Public/Secret IDs
+    /// ```
+    /// use pasta_tokens::{paserk::k3, v3, purpose::public::{Public, Secret}};
+    ///
+    /// let secret_key = v3::SecretKey::new_os_random();
+    /// let kid: k3::KeyId<Secret> = secret_key.to_id();
+    /// // kid.to_string() => "k3.sid.p26RNihDPsk2QbglGMTmwMMqLYyeLY25UOQZXQDXwn61"
+    ///
+    /// let kid: k3::KeyId<Public> = secret_key.public_key().to_id();
+    /// // kid.to_string() => "k3.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
+    /// ```
+    pub type KeyId<P> = super::id::KeyId<V3, P>;
+    /// Password wrapped keys
+    pub type PwWrappedKey<P> = super::pbkw::PwWrappedKey<V3, P>;
+    /// A local key encrypted with an asymmetric wrapping key.
+    pub type SealedKey = super::pke::SealedKey<V3>;
+    /// Paragon Initiative Enterprises standard symmetric key-wrapping
+    pub type PieWrappedKey<P> = super::wrap::PieWrappedKey<V3, P>;
+}

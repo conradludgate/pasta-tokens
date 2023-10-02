@@ -5,20 +5,13 @@ PASETO implementation for Rust.
 ## Examples
 
 ```rust
-use pasta_tokens::{
-    purpose::public::{
-        Public, PublicKey, SecretKey, SignedToken, UnsignedToken, VerifiedToken,
-    },
-    version::V4,
-    paserk::id::KeyId,
-    Json,
-};
+use pasta_tokens::{v4, paserk::k4, purpose::public::Public, Json};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct Footer {
     /// The ID of the key used to sign the PASETO.
     /// A footer should only contain types that are `SafeForFooter`
-    kid: KeyId<V4, Public>,
+    kid: k4::KeyId<Public>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -33,12 +26,12 @@ struct Payload {
 
 // load your secret key
 let secret_key = hex::decode("407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1d").unwrap();
-let secret_key = SecretKey::from_secret_key(secret_key.try_into().unwrap());
+let secret_key = v4::SecretKey::from_secret_key(secret_key.try_into().unwrap());
 
 let user_id = uuid::Uuid::new_v4();
 
 // create the token payload and footer.
-let token = UnsignedToken::new_v4_public(Payload {
+let token = v4::UnsignedToken::new_v4_public(Payload {
         // expires in 1 hour
         expiration: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
         user_id,
@@ -57,7 +50,7 @@ println!("{token}");
 
 // load your public keys
 let public_key = hex::decode("b7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023").unwrap();
-let public_key = PublicKey::from_public_key(&public_key).unwrap();
+let public_key = v4::PublicKey::from_public_key(&public_key).unwrap();
 
 // keep a key cache of key IDs to public keys.
 // this will let you securely rotate your secret keys
@@ -67,13 +60,13 @@ let keys = std::collections::HashMap::from([
 ]);
 
 // Parse the token from the client
-let token: SignedToken<V4, Json<Footer>> = token.parse().expect("should be a valid token format");
+let token: v4::SignedToken<Json<Footer>> = token.parse().expect("should be a valid token format");
 
 // using the key ID, search for the public key
 let key = &keys[&token.unverified_footer().0.kid];
 
 // verify the token signature
-let token: VerifiedToken<V4, Payload, _> = token.verify(key).expect("token should be signed by us");
+let token: v4::VerifiedToken<Payload, _> = token.verify(key).expect("token should be signed by us");
 
 // check if the token has expired
 assert!(token.message.expiration > time::OffsetDateTime::now_utc());

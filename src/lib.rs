@@ -33,20 +33,13 @@
 //! ## Examples
 //!
 //! ```
-//! use pasta_tokens::{
-//!     purpose::public::{
-//!         Public, PublicKey, SecretKey, SignedToken, UnsignedToken, VerifiedToken,
-//!     },
-//!     version::V4,
-//!     paserk::id::KeyId,
-//!     Json,
-//! };
+//! use pasta_tokens::{v4, paserk::k4, purpose::public::Public, Json};
 //!
 //! #[derive(serde::Serialize, serde::Deserialize)]
 //! struct Footer {
 //!     /// The ID of the key used to sign the PASETO.
 //!     /// A footer should only contain types that are `SafeForFooter`
-//!     kid: KeyId<V4, Public>,
+//!     kid: k4::KeyId<Public>,
 //! }
 //!
 //! #[derive(serde::Serialize, serde::Deserialize)]
@@ -61,12 +54,12 @@
 //!
 //! // load your secret key
 //! let secret_key = hex::decode("407796f4bc4b8184e9fe0c54b336822d34823092ad873d87ba14c3efb9db8c1d").unwrap();
-//! let secret_key = SecretKey::from_secret_key(secret_key.try_into().unwrap());
+//! let secret_key = v4::SecretKey::from_secret_key(secret_key.try_into().unwrap());
 //!
 //! let user_id = uuid::Uuid::new_v4();
 //!
 //! // create the token payload and footer.
-//! let token = UnsignedToken::new_v4_public(Payload {
+//! let token = v4::UnsignedToken::new(Payload {
 //!         // expires in 1 hour
 //!         expiration: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
 //!         user_id,
@@ -85,7 +78,7 @@
 //!
 //! // load your public keys
 //! let public_key = hex::decode("b7715bd661458d928654d3e832f53ff5c9480542e0e3d4c9b032c768c7ce6023").unwrap();
-//! let public_key = PublicKey::from_public_key(&public_key).unwrap();
+//! let public_key = v4::PublicKey::from_public_key(&public_key).unwrap();
 //!
 //! // keep a key cache of key IDs to public keys.
 //! // this will let you securely rotate your secret keys
@@ -95,13 +88,13 @@
 //! ]);
 //!
 //! // Parse the token from the client
-//! let token: SignedToken<V4, Json<Footer>> = token.parse().expect("should be a valid token format");
+//! let token: v4::SignedToken<Json<Footer>> = token.parse().expect("should be a valid token format");
 //!
 //! // using the key ID, search for the public key
 //! let key = &keys[&token.unverified_footer().0.kid];
 //!
 //! // verify the token signature
-//! let token: VerifiedToken<V4, Payload, _> = token.verify(key).expect("token should be signed by us");
+//! let token: v4::VerifiedToken<Payload, _> = token.verify(key).expect("token should be signed by us");
 //!
 //! // check if the token has expired
 //! assert!(token.message.expiration > time::OffsetDateTime::now_utc());
@@ -113,52 +106,70 @@
 #[allow(dead_code)]
 type Bytes<N> = generic_array::GenericArray<u8, N>;
 
+/// PASETO V4 using only algorithms that are provided by libsodium
+pub mod v4 {
+    use crate::version::V4;
+    /// A symmetric key for `local` encrypted tokens
+    pub type SymmetricKey = crate::purpose::local::SymmetricKey<V4>;
+    /// An decrypted PASETO.
+    pub type DecryptedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::local::DecryptedToken<V4, M, F, E>;
+    /// An encrypted PASETO.
+    pub type EncryptedToken<F = (), E = crate::Json<()>> =
+        crate::purpose::local::EncryptedToken<V4, F, E>;
+    /// An unencrypted PASETO.
+    pub type UnencryptedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::local::UnencryptedToken<V4, M, F, E>;
+
+    /// A public key for verifying `public` tokens
+    pub type PublicKey = crate::purpose::public::PublicKey<V4>;
+    /// A secret key for signing `public` tokens
+    pub type SecretKey = crate::purpose::public::SecretKey<V4>;
+    /// A Verified PASETO that has been parsed and verified
+    pub type VerifiedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::public::VerifiedToken<V4, M, F, E>;
+    /// A Signed PASETO.
+    pub type SignedToken<F = (), E = crate::Json<()>> =
+        crate::purpose::public::SignedToken<V4, F, E>;
+    /// A PASETO that is ready to be signed.
+    pub type UnsignedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::public::UnsignedToken<V4, M, F, E>;
+}
+
+/// PASETO V3 using only NIST approved algorithms
+pub mod v3 {
+    use crate::version::V3;
+    /// A symmetric key for `local` encrypted tokens
+    pub type SymmetricKey = crate::purpose::local::SymmetricKey<V3>;
+    /// An decrypted PASETO.
+    pub type DecryptedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::local::DecryptedToken<V3, M, F, E>;
+    /// An encrypted PASETO.
+    pub type EncryptedToken<F = (), E = crate::Json<()>> =
+        crate::purpose::local::EncryptedToken<V3, F, E>;
+    /// An unencrypted PASETO.
+    pub type UnencryptedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::local::UnencryptedToken<V3, M, F, E>;
+
+    /// A public key for verifying `public` tokens
+    pub type PublicKey = crate::purpose::public::PublicKey<V3>;
+    /// A secret key for signing `public` tokens
+    pub type SecretKey = crate::purpose::public::SecretKey<V3>;
+    /// A Verified PASETO that has been parsed and verified
+    pub type VerifiedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::public::VerifiedToken<V3, M, F, E>;
+    /// A Signed PASETO.
+    pub type SignedToken<F = (), E = crate::Json<()>> =
+        crate::purpose::public::SignedToken<V3, F, E>;
+    /// A PASETO that is ready to be signed.
+    pub type UnsignedToken<M, F = (), E = crate::Json<()>> =
+        crate::purpose::public::UnsignedToken<V3, M, F, E>;
+}
+
 pub mod purpose {
     //! Purpose of the PASETO. Supports either [`local`] or [`public`]
 
-    pub mod local {
-        //! PASETO shared-key authenticated encryption
-        //!
-        //! Example use cases:
-        //! * Tamper-proof, short-lived immutable data stored on client machines.
-        //!   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
-
-        /// A symmetric key for `local` encrypted tokens
-        pub type SymmetricKey<V> = crate::key::Key<V, Local>;
-
-        /// An decrypted PASETO.
-        pub type DecryptedToken<V, M, F = (), E = crate::Json<()>> =
-            crate::tokens::ValidatedToken<V, Local, M, F, E>;
-        /// An encrypted PASETO.
-        pub type EncryptedToken<V, F = (), E = crate::Json<()>> =
-            crate::tokens::SecuredToken<V, Local, F, E>;
-        /// An unencrypted PASETO.
-        pub type UnencryptedToken<V, M, F = (), E = crate::Json<()>> =
-            crate::tokens::TokenBuilder<V, Local, M, F, E>;
-
-        /// PASETO shared-key authenticated encryption
-        ///
-        /// Example use cases:
-        /// * Tamper-proof, short-lived immutable data stored on client machines.
-        ///   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
-        #[derive(Debug, Default)]
-        pub struct Local;
-
-        impl super::Purpose for Local {
-            const HEADER: &'static str = "local";
-        }
-
-        mod impl_;
-
-        pub use impl_::*;
-
-        #[cfg(feature = "v4-local")]
-        mod v4;
-
-        #[cfg(feature = "v3-local")]
-        mod v3;
-    }
-
+    pub mod local;
     pub mod public;
 
     /// Purpose of the PASETO.

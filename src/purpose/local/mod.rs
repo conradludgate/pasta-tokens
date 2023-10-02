@@ -1,4 +1,4 @@
-//! PASETO local encryption
+//! PASETO shared-key authenticated encryption
 //!
 //! Example use cases:
 //! * Tamper-proof, short-lived immutable data stored on client machines.
@@ -18,7 +18,36 @@ use crate::{
     Bytes, Footer, PasetoError, TokenMetadata,
 };
 
-use super::{DecryptedToken, EncryptedToken, Local, SymmetricKey, UnencryptedToken};
+/// A symmetric key for `local` encrypted tokens
+pub type SymmetricKey<V> = crate::key::Key<V, Local>;
+
+/// An decrypted PASETO.
+pub type DecryptedToken<V, M, F = (), E = crate::Json<()>> =
+    crate::tokens::ValidatedToken<V, Local, M, F, E>;
+/// An encrypted PASETO.
+pub type EncryptedToken<V, F = (), E = crate::Json<()>> =
+    crate::tokens::SecuredToken<V, Local, F, E>;
+/// An unencrypted PASETO.
+pub type UnencryptedToken<V, M, F = (), E = crate::Json<()>> =
+    crate::tokens::TokenBuilder<V, Local, M, F, E>;
+
+/// PASETO shared-key authenticated encryption
+///
+/// Example use cases:
+/// * Tamper-proof, short-lived immutable data stored on client machines.
+///   + e.g. "remember me on this computer" cookies, which secure a unique ID that are used in a database lookup upon successful validation to provide long-term user authentication across multiple browsing sessions.
+#[derive(Debug, Default)]
+pub struct Local;
+
+impl super::Purpose for Local {
+    const HEADER: &'static str = "local";
+}
+
+#[cfg(feature = "v4-local")]
+mod v4;
+
+#[cfg(feature = "v3-local")]
+mod v3;
 
 impl<V: LocalVersion> KeyType<V> for Local {
     type KeyLen = V::KeySize;
@@ -311,15 +340,9 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
 fn sandwich(v: &mut Vec<u8>, prepend: &[u8; NONCE_LEN], append: &[u8]) {
     let additional = prepend.len() + append.len();
     let total = v.len() + additional;
-    if total < v.capacity() {
-        v.extend_from_slice(prepend);
-        v.rotate_right(prepend.len())
-    } else {
-        let mut w = Vec::with_capacity(total);
-        w.extend_from_slice(prepend);
-        w.append(v);
-        *v = w;
-    }
-
+    let mut w = Vec::with_capacity(total);
+    w.extend_from_slice(prepend);
+    w.append(v);
+    *v = w;
     v.extend_from_slice(append)
 }
