@@ -86,7 +86,7 @@
 //! use pasta_tokens::{key::Key, purpose::local::Local, paserk::plaintext::PlaintextKey, version::V4};
 //!
 //! let local_key = Key::<V4, Local>::new_os_random();
-//! let key = PlaintextKey(local_key);
+//! let key = PlaintextKey{ key: local_key };
 //! // key.to_string() => "k4.local.bkwMkk5uhGbHAISf4bzY5nlm6y_sfzOIAZTfj6Tc9y0"
 //! ```
 //!
@@ -235,6 +235,7 @@ pub mod k4 {
     use crate::version::V4;
     /// A key encoded in base64. It is not a secure serialization.
     pub type PlaintextKey<P> = super::plaintext::PlaintextKey<V4, P>;
+
     /// Unique ID for a key
     ///
     /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>
@@ -273,6 +274,7 @@ pub mod k3 {
     use crate::version::V3;
     /// A key encoded in base64. It is not a secure serialization.
     pub type PlaintextKey<P> = super::plaintext::PlaintextKey<V3, P>;
+
     /// Unique ID for a key
     ///
     /// <https://github.com/paseto-standard/paserk/blob/master/operations/ID.md>

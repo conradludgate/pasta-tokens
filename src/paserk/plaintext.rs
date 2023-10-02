@@ -14,15 +14,18 @@ use crate::{
 
 use super::write_b64;
 
-/// A key encoded in base64. It is not a secure serialization.
-pub struct PlaintextKey<V: Version, K: KeyType<V>>(pub Key<V, K>);
+/// A key encoded in base64. **It is not a secure serialization.**
+pub struct PlaintextKey<V: Version, K: KeyType<V>> {
+    /// Key that is being revealed as plaintext
+    pub key: Key<V, K>,
+}
 
 impl<V: Version, K: KeyType<V>> fmt::Display for PlaintextKey<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(V::PASERK_HEADER)?;
         f.write_str(".")?;
         f.write_str(K::KEY_HEADER)?;
-        write_b64(&self.0.key, f)
+        write_b64(&self.key.key, f)
     }
 }
 
@@ -46,7 +49,7 @@ impl<V: Version, K: KeyType<V>> FromStr for PlaintextKey<V, K> {
             return Err(PasetoError::Base64DecodeError);
         }
 
-        Ok(PlaintextKey(Key { key }))
+        Ok(PlaintextKey { key: Key { key } })
     }
 }
 

@@ -136,8 +136,8 @@ impl KeyTest {
                 let key2: PlaintextKey<V, K> = paserk.parse().unwrap();
                 let key = Key::<V, K>::from_key(&key);
 
-                let paserk2 = PlaintextKey(key.clone()).to_string();
-                if key != key2.0 {
+                let paserk2 = PlaintextKey { key: key.clone() }.to_string();
+                if key != key2.key {
                     return Err("decode failed".into());
                 }
                 if paserk != paserk2 {
