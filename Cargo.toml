@@ -1,6 +1,6 @@
 [package]
 name = "pasta-tokens"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 edition = "2021"
 rust-version = "1.65.0"
 authors = ["Conrad Ludgate <conradludgate@gmail.com>"]
@@ -48,8 +48,6 @@ v4-pbkw = ["dep:argon2", "v4-local"]
 v4-pke = ["v4-local", "v4-public", "dep:curve25519-dalek"]
 v4-wrap = ["v4-local"]
 
-test = []
-
 [dependencies]
 subtle = "2.5.0"
 generic-array = "0.14"
@@ -94,7 +92,6 @@ arbitrary = { version = "1.3", features = ["derive"] }
 rand = "0.8"
 hex = "0.4"
 ff = "0.13.0"
-pasta-tokens = { path = ".", features = ["test"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 

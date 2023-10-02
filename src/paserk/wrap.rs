@@ -458,7 +458,7 @@ impl PieWrapType<V4> for Secret {
     type TagIv = <V4 as PieVersion>::TagIv;
 }
 
-#[cfg(any(test, fuzzing))]
+#[cfg(fuzzing)]
 pub mod fuzz_tests {
     use crate::{fuzzing::FakeRng, key::Key, purpose::local::SymmetricKey};
 
@@ -471,7 +471,6 @@ pub mod fuzz_tests {
         ephemeral: FakeRng<32>,
     }
 
-    #[cfg(fuzzing)]
     impl<'a, V: PieVersion, K: PieWrapType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
     where
         SymmetricKey<V>: arbitrary::Arbitrary<'a>,

@@ -7,7 +7,7 @@
 use cipher::{KeyInit, StreamCipher, Unsigned};
 use digest::Mac;
 use generic_array::{ArrayLength, GenericArray};
-use rand::Rng;
+use rand::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use crate::{
@@ -205,7 +205,12 @@ impl<V: LocalVersion, M> UnencryptedToken<V, M> {
 }
 
 impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M, F, E> {
-    /// Encrypt the token
+    /// Encrypt the token using a random nonce and no implicit assertions
+    pub fn encrypt(self, key: &SymmetricKey<V>) -> Result<EncryptedToken<V, F, E>, PasetoError> {
+        self.encrypt_with_assertions(key, &[])
+    }
+
+    /// Encrypt the token with implciit assertions
     ///
     /// ### Implicit Assertions
     ///
@@ -215,29 +220,49 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
     ///
     /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
     /// if it was provided at the time of creation.
-    pub fn encrypt(
+    pub fn encrypt_with_assertions(
         self,
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],
     ) -> Result<EncryptedToken<V, F, E>, PasetoError> {
-        self.0
-            .encrypt_inner(key, rand::thread_rng().gen(), implicit_assertions)
+        self.encrypt_with_assertions_and_rng(key, implicit_assertions, rand::thread_rng())
     }
 
-    #[doc(hidden)]
-    #[cfg(feature = "test")]
-    pub fn encrypt_with_nonce(
+    /// Encrypt the token with implciit assertions
+    ///
+    /// ### Implicit Assertions
+    ///
+    /// PASETO `v3` and `v4` tokens support a feature called **implicit assertions**, which are used
+    /// in the calculation of the MAC (`local` tokens) or digital signature (`public` tokens), but
+    /// **NOT** stored in the token. (Thus, its implicitness.)
+    ///
+    /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
+    /// if it was provided at the time of creation.
+    pub fn encrypt_with_assertions_and_rng(
         self,
         key: &SymmetricKey<V>,
-        nonce: [u8; 32],
         implicit_assertions: &[u8],
+        mut rng: impl CryptoRng + RngCore,
     ) -> Result<EncryptedToken<V, F, E>, PasetoError> {
+        let mut nonce = [0; NONCE_LEN];
+        rng.fill_bytes(&mut nonce);
         self.0.encrypt_inner(key, nonce, implicit_assertions)
     }
 }
 
 impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
     /// Decrypt the token
+    pub fn decrypt<M>(
+        self,
+        key: &SymmetricKey<V>,
+    ) -> Result<DecryptedToken<V, M, F, E>, PasetoError>
+    where
+        E: MessageEncoding<M>,
+    {
+        self.decrypt_with_assertions(key, &[])
+    }
+
+    /// Decrypt the token with implicit assertions
     ///
     /// ### Implicit Assertions
     ///
@@ -247,7 +272,7 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
     ///
     /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
     /// if it was provided at the time of creation.
-    pub fn decrypt<M>(
+    pub fn decrypt_with_assertions<M>(
         mut self,
         key: &SymmetricKey<V>,
         implicit_assertions: &[u8],

@@ -635,7 +635,7 @@ dependencies = [
 
 [[package]]
 name = "pasta-tokens"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 dependencies = [
  "aes",
  "arbitrary",
@@ -656,7 +656,6 @@ dependencies = [
  "hmac",
  "libtest-mimic",
  "p384",
- "pasta-tokens",
  "pbkdf2",
  "rand",
  "serde",

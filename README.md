@@ -47,7 +47,7 @@ let token = UnsignedToken::new_v4_public(Payload {
         kid: secret_key.public_key().to_id(),
     }))
     // sign with the secret key
-    .sign(&secret_key, &[])
+    .sign(&secret_key)
     .unwrap()
     .to_string();
 
@@ -73,7 +73,7 @@ let token: SignedToken<V4, Json<Footer>> = token.parse().expect("should be a val
 let key = &keys[&token.unverified_footer().0.kid];
 
 // verify the token signature
-let token: VerifiedToken<V4, Payload, _> = token.verify(key, &[]).expect("token should be signed by us");
+let token: VerifiedToken<V4, Payload, _> = token.verify(key).expect("token should be signed by us");
 
 // check if the token has expired
 assert!(token.message.expiration > time::OffsetDateTime::now_utc());

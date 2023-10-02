@@ -23,7 +23,6 @@ features = [
     "v4-public",
     "v4-pke",
     "v4-wrap",
-    "test"
 ]
 
 [[bin]]

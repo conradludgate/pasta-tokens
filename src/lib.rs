@@ -75,7 +75,7 @@
 //!         kid: secret_key.public_key().to_id(),
 //!     }))
 //!     // sign with the secret key
-//!     .sign(&secret_key, &[])
+//!     .sign(&secret_key)
 //!     .unwrap()
 //!     .to_string();
 //!
@@ -101,7 +101,7 @@
 //! let key = &keys[&token.unverified_footer().0.kid];
 //!
 //! // verify the token signature
-//! let token: VerifiedToken<V4, Payload, _> = token.verify(key, &[]).expect("token should be signed by us");
+//! let token: VerifiedToken<V4, Payload, _> = token.verify(key).expect("token should be signed by us");
 //!
 //! // check if the token has expired
 //! assert!(token.message.expiration > time::OffsetDateTime::now_utc());
@@ -565,7 +565,7 @@ impl std::fmt::Display for PasetoError {
     }
 }
 
-#[cfg(any(test, fuzzing))]
+#[cfg(fuzzing)]
 pub mod fuzzing {
     use rand::{CryptoRng, RngCore};
 
@@ -586,7 +586,6 @@ pub mod fuzzing {
         pub start: usize,
     }
 
-    #[cfg(fuzzing)]
     impl<'a, const N: usize> arbitrary::Arbitrary<'a> for FakeRng<N>
     where
         [u8; N]: arbitrary::Arbitrary<'a>,
@@ -636,7 +635,6 @@ pub mod fuzzing {
         data3: String,
     }
 
-    #[cfg(fuzzing)]
     impl<'a, V: Version, K: KeyType<V>> arbitrary::Arbitrary<'a> for FuzzInput<V, K>
     where
         Key<V, K>: arbitrary::Arbitrary<'a>,
@@ -665,12 +663,13 @@ pub mod fuzzing {
             .with_footer(Json(Data {
                 data: self.data2.clone(),
             }))
-            .encrypt_with_nonce(&self.key, self.ephemeral.bytes, self.data3.as_bytes())
+            .encrypt_with_assertions_and_rng(&self.key, self.data3.as_bytes(), self.ephemeral)
             .unwrap();
             let token: EncryptedToken<V, Json<Data>> = token.to_string().parse().unwrap();
             assert_eq!(token.unverified_footer().0.data, self.data2);
-            let token: DecryptedToken<V, Data, Json<Data>> =
-                token.decrypt(&self.key, self.data3.as_bytes()).unwrap();
+            let token: DecryptedToken<V, Data, Json<Data>> = token
+                .decrypt_with_assertions(&self.key, self.data3.as_bytes())
+                .unwrap();
             assert_eq!(token.message.data, self.data1);
         }
     }
@@ -682,12 +681,12 @@ pub mod fuzzing {
             .with_footer(Json(Data {
                 data: self.data2.clone(),
             }))
-            .sign(&self.key, self.data3.as_bytes())
+            .sign_with_assertions(&self.key, self.data3.as_bytes())
             .unwrap();
             let token: SignedToken<V3, Json<Data>> = token.to_string().parse().unwrap();
             assert_eq!(token.unverified_footer().0.data, self.data2);
             let token: VerifiedToken<V3, Data, Json<Data>> = token
-                .verify(&self.key.public_key(), self.data3.as_bytes())
+                .verify_with_assertions(&self.key.public_key(), self.data3.as_bytes())
                 .unwrap();
             assert_eq!(token.message.data, self.data1);
         }
@@ -700,12 +699,12 @@ pub mod fuzzing {
             .with_footer(Json(Data {
                 data: self.data2.clone(),
             }))
-            .sign(&self.key, self.data3.as_bytes())
+            .sign_with_assertions(&self.key, self.data3.as_bytes())
             .unwrap();
             let token: SignedToken<V4, Json<Data>> = token.to_string().parse().unwrap();
             assert_eq!(token.unverified_footer().0.data, self.data2);
             let token: VerifiedToken<V4, Data, Json<Data>> = token
-                .verify(&self.key.public_key(), self.data3.as_bytes())
+                .verify_with_assertions(&self.key.public_key(), self.data3.as_bytes())
                 .unwrap();
             assert_eq!(token.message.data, self.data1);
         }

@@ -10,6 +10,7 @@ use serde::{
     de::{DeserializeOwned, Visitor},
     Deserialize,
 };
+use signature::rand_core::impls::{next_u32_via_fill, next_u64_via_fill};
 
 fn main() {
     let mut args = Arguments::from_args();
@@ -90,7 +91,10 @@ impl PasetoTest {
                 };
                 assert_eq!(token.unverified_footer(), footer.as_bytes());
 
-                match token.decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes()) {
+                match token.decrypt_with_assertions::<serde_json::Value>(
+                    &key,
+                    implicit_assertion.as_bytes(),
+                ) {
                     Ok(_) => Err("decrypting token should fail".into()),
                     Err(_) => Ok(()),
                 }
@@ -107,17 +111,27 @@ impl PasetoTest {
                 assert_eq!(token.unverified_footer(), footer.as_bytes());
 
                 let decrypted_token = token
-                    .decrypt::<serde_json::Value>(&key, implicit_assertion.as_bytes())
+                    .decrypt_with_assertions::<serde_json::Value>(
+                        &key,
+                        implicit_assertion.as_bytes(),
+                    )
                     .unwrap();
 
                 let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
                 assert_eq!(decrypted_token.message, payload);
 
-                let nonce = hex::decode(nonce).unwrap().try_into().unwrap();
+                let nonce: [u8; 32] = hex::decode(nonce).unwrap().try_into().unwrap();
 
                 let token = UnencryptedToken::new(decrypted_token.message)
                     .with_footer(decrypted_token.footer)
-                    .encrypt_with_nonce(&key, nonce, implicit_assertion.as_bytes())
+                    .encrypt_with_assertions_and_rng(
+                        &key,
+                        implicit_assertion.as_bytes(),
+                        FakeRng {
+                            bytes: nonce,
+                            start: 0,
+                        },
+                    )
                     .unwrap();
 
                 assert_eq!(token.to_string(), token_str);
@@ -138,8 +152,10 @@ impl PasetoTest {
                 };
                 assert_eq!(token.unverified_footer(), footer.as_bytes());
 
-                match token.verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())
-                {
+                match token.verify_with_assertions::<serde_json::Value>(
+                    &public_key,
+                    implicit_assertion.as_bytes(),
+                ) {
                     Ok(_) => Err("verifying token should fail".into()),
                     Err(_) => Ok(()),
                 }
@@ -162,7 +178,10 @@ impl PasetoTest {
                 assert_eq!(token.unverified_footer(), footer.as_bytes());
 
                 let token = token
-                    .verify::<serde_json::Value>(&public_key, implicit_assertion.as_bytes())
+                    .verify_with_assertions::<serde_json::Value>(
+                        &public_key,
+                        implicit_assertion.as_bytes(),
+                    )
                     .unwrap();
 
                 let payload: serde_json::Value = serde_json::from_str(&payload).unwrap();
@@ -170,7 +189,7 @@ impl PasetoTest {
 
                 let token = UnsignedToken::<V, _>::new(token.message)
                     .with_footer(token.footer)
-                    .sign(&secret_key, implicit_assertion.as_bytes())
+                    .sign_with_assertions(&secret_key, implicit_assertion.as_bytes())
                     .unwrap();
 
                 assert_eq!(token.to_string(), token_str);
@@ -287,3 +306,38 @@ impl ParseKey for PublicKey<V4> {
         Self::from_public_key(&b).unwrap()
     }
 }
+
+#[derive(Clone, Debug)]
+/// a consistent rng store
+struct FakeRng<const N: usize> {
+    pub bytes: [u8; N],
+    pub start: usize,
+}
+
+impl<const N: usize> rand::RngCore for FakeRng<N> {
+    fn next_u32(&mut self) -> u32 {
+        next_u32_via_fill(self)
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        next_u64_via_fill(self)
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        let remaining = N - self.start;
+        let requested = dest.len();
+        if requested > remaining {
+            panic!("not enough entropy");
+        }
+        dest.copy_from_slice(&self.bytes[self.start..self.start + requested]);
+        self.start += requested;
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+        self.fill_bytes(dest);
+        Ok(())
+    }
+}
+
+// not really
+impl<const N: usize> rand::CryptoRng for FakeRng<N> {}

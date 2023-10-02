@@ -41,6 +41,11 @@ pub trait PublicVersion: Version {
 
 impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, F, E> {
     /// Sign this token
+    pub fn sign(self, key: &SecretKey<V>) -> Result<SignedToken<V, F, E>, PasetoError> {
+        self.sign_with_assertions(key, &[])
+    }
+
+    /// Sign this token with implicit assertions
     ///
     /// ### Implicit Assertions
     ///
@@ -50,7 +55,7 @@ impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, 
     ///
     /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
     /// if it was provided at the time of creation.
-    pub fn sign(
+    pub fn sign_with_assertions(
         self,
         key: &SecretKey<V>,
         implicit_assertions: &[u8],
@@ -87,6 +92,14 @@ impl<V: PublicVersion, M> UnsignedToken<V, M> {
 
 impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
     /// Verify that this token was signed with the associated key
+    pub fn verify<M>(self, key: &PublicKey<V>) -> Result<VerifiedToken<V, M, F, E>, PasetoError>
+    where
+        E: MessageEncoding<M>,
+    {
+        self.verify_with_assertions(key, &[])
+    }
+
+    /// Verify that this token was signed with the associated key and with the implicit assertions
     ///
     /// ### Implicit Assertions
     ///
@@ -96,7 +109,7 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
     ///
     /// An implicit assertion MUST be provided by the caller explicitly when validating a PASETO token
     /// if it was provided at the time of creation.
-    pub fn verify<M>(
+    pub fn verify_with_assertions<M>(
         self,
         key: &PublicKey<V>,
         implicit_assertions: &[u8],

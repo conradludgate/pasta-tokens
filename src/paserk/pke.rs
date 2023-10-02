@@ -464,7 +464,7 @@ impl<V: SealedVersion> fmt::Display for SealedKey<V> {
     }
 }
 
-#[cfg(any(test, fuzzing))]
+#[cfg(fuzzing)]
 pub mod fuzz_tests {
     use crate::{
         fuzzing::FakeRng,
@@ -473,8 +473,7 @@ pub mod fuzz_tests {
         version::{V3, V4},
     };
 
-    #[derive(Debug)]
-    #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+    #[derive(Debug, arbitrary::Arbitrary)]
     pub struct V3SealInput {
         key: Key<V3, Local>,
         secret_key: Key<V3, Secret>,
@@ -500,8 +499,7 @@ pub mod fuzz_tests {
         }
     }
 
-    #[derive(Debug)]
-    #[cfg_attr(fuzzing, derive(arbitrary::Arbitrary))]
+    #[derive(Debug, arbitrary::Arbitrary)]
     pub struct V4SealInput {
         key: Key<V4, Local>,
         secret_key: Key<V4, Secret>,
