@@ -8,7 +8,7 @@ use cipher::Unsigned;
 use generic_array::ArrayLength;
 
 use crate::{
-    encodings::{MessageEncoding, PayloadEncoding},
+    encodings::{MessageDecoding, MessageEncoding, Payload},
     version::Version,
     Bytes, Footer, PasetoError, TokenMetadata,
 };
@@ -144,11 +144,11 @@ impl<V: PublicVersion, M> UnsignedToken<V, M> {
     }
 }
 
-impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
+impl<V: PublicVersion, F: Footer, E: Payload> SignedToken<V, F, E> {
     /// Verify that this token was signed with the associated key
     pub fn verify<M>(self, key: &PublicKey<V>) -> Result<VerifiedToken<V, M, F, E>, PasetoError>
     where
-        E: MessageEncoding<M>,
+        E: MessageDecoding<M>,
     {
         self.verify_with_assertions(key, &[])
     }
@@ -169,7 +169,7 @@ impl<V: PublicVersion, F: Footer, E: PayloadEncoding> SignedToken<V, F, E> {
         implicit_assertions: &[u8],
     ) -> Result<VerifiedToken<V, M, F, E>, PasetoError>
     where
-        E: MessageEncoding<M>,
+        E: MessageDecoding<M>,
     {
         let (m, sig) = self
             .payload

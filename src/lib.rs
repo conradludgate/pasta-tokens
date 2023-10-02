@@ -172,6 +172,9 @@ pub mod purpose {
     pub mod local;
     pub mod public;
 
+    pub use local::Local;
+    pub use public::{Public, Secret};
+
     /// Purpose of the PASETO.
     ///
     /// * `public` - signed tokens. payload included in plaintext
@@ -238,29 +241,36 @@ pub mod encodings {
 
     use crate::Json;
 
-    /// A payload encoding protocol. Currently only supports [`Json`]
-    pub trait PayloadEncoding: Default {
+    /// A payload protocol. Currently only supports [`Json`]
+    pub trait Payload: Default {
         /// Suffix for this encoding type
         const SUFFIX: &'static str;
     }
 
     /// Payload encoding implementation. Currently only supports [`Json`]
-    pub trait MessageEncoding<M>: PayloadEncoding {
+    pub trait MessageEncoding<M>: Payload {
         /// Encode the message
         fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>>;
+    }
+
+    /// Payload decoding implementation. Currently only supports [`Json`]
+    pub trait MessageDecoding<M>: Payload {
         /// Decode the message
         fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error + Send + Sync>>;
     }
 
-    impl PayloadEncoding for Json<()> {
+    impl Payload for Json<()> {
+        /// JSON is the standard payload and requires no version suffix
         const SUFFIX: &'static str = "";
     }
 
-    impl<M: Serialize + DeserializeOwned> MessageEncoding<M> for Json<()> {
+    impl<M: Serialize> MessageEncoding<M> for Json<()> {
         fn encode(&self, s: &M) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
             serde_json::to_vec(s).map_err(From::from)
         }
+    }
 
+    impl<M: DeserializeOwned> MessageDecoding<M> for Json<()> {
         fn decode(&self, from: &[u8]) -> Result<M, Box<dyn std::error::Error + Send + Sync>> {
             serde_json::from_slice(from).map_err(From::from)
         }
@@ -272,7 +282,7 @@ mod pae;
 /// Encoding scheme for PASETO footers.
 ///
 /// Footers are allowed to be any encoding, but JSON is the standard.
-/// You can use the `Json` type to encode using JSON.
+/// You can use the `Json` type to encode serde structs using JSON.
 ///
 /// Footers are also optional, so the `()` empty type is considered as a missing footer.
 pub trait Footer: Sized {
@@ -351,9 +361,7 @@ pub mod tokens {
 
     use base64ct::Encoding;
 
-    use crate::{
-        encodings::PayloadEncoding, purpose, version, Footer, Json, PasetoError, TokenMetadata,
-    };
+    use crate::{encodings::Payload, purpose, version, Footer, Json, PasetoError, TokenMetadata};
 
     /// A validated token.
     ///
@@ -427,7 +435,7 @@ pub mod tokens {
         pub(crate) footer: F,
     }
 
-    impl<V: version::Version, T: purpose::Purpose, F, E: PayloadEncoding> fmt::Display
+    impl<V: version::Version, T: purpose::Purpose, F, E: Payload> fmt::Display
         for SecuredToken<V, T, F, E>
     {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -449,7 +457,7 @@ pub mod tokens {
         }
     }
 
-    impl<V: version::Version, K: purpose::Purpose, F, E: PayloadEncoding> serde::Serialize
+    impl<V: version::Version, K: purpose::Purpose, F, E: Payload> serde::Serialize
         for SecuredToken<V, K, F, E>
     {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -460,7 +468,7 @@ pub mod tokens {
         }
     }
 
-    impl<'de, V: version::Version, K: purpose::Purpose, F: Footer, E: PayloadEncoding>
+    impl<'de, V: version::Version, K: purpose::Purpose, F: Footer, E: Payload>
         serde::Deserialize<'de> for SecuredToken<V, K, F, E>
     {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -468,7 +476,7 @@ pub mod tokens {
             D: serde::Deserializer<'de>,
         {
             struct FromStrVisitor<V, T, F, E>(std::marker::PhantomData<(V, T, F, E)>);
-            impl<'de, V: version::Version, K: purpose::Purpose, F: Footer, E: PayloadEncoding>
+            impl<'de, V: version::Version, K: purpose::Purpose, F: Footer, E: Payload>
                 serde::de::Visitor<'de> for FromStrVisitor<V, K, F, E>
             {
                 type Value = SecuredToken<V, K, F, E>;
@@ -492,7 +500,7 @@ pub mod tokens {
         }
     }
 
-    impl<V: version::Version, T: purpose::Purpose, F: Footer, E: PayloadEncoding> std::str::FromStr
+    impl<V: version::Version, T: purpose::Purpose, F: Footer, E: Payload> std::str::FromStr
         for SecuredToken<V, T, F, E>
     {
         type Err = PasetoError;

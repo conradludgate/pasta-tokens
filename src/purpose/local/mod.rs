@@ -11,7 +11,7 @@ use rand::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use crate::{
-    encodings::{MessageEncoding, PayloadEncoding},
+    encodings::{MessageEncoding, Payload, MessageDecoding},
     key::KeyType,
     purpose::Purpose,
     version::Version,
@@ -279,14 +279,14 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> UnencryptedToken<V, M
     }
 }
 
-impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
+impl<V: LocalVersion, F: Footer, E: Payload> EncryptedToken<V, F, E> {
     /// Decrypt the token
     pub fn decrypt<M>(
         self,
         key: &SymmetricKey<V>,
     ) -> Result<DecryptedToken<V, M, F, E>, PasetoError>
     where
-        E: MessageEncoding<M>,
+        E: MessageDecoding<M>,
     {
         self.decrypt_with_assertions(key, &[])
     }
@@ -307,7 +307,7 @@ impl<V: LocalVersion, F: Footer, E: PayloadEncoding> EncryptedToken<V, F, E> {
         implicit_assertions: &[u8],
     ) -> Result<DecryptedToken<V, M, F, E>, PasetoError>
     where
-        E: MessageEncoding<M>,
+        E: MessageDecoding<M>,
     {
         let (n, m) = self.payload.split_at_mut(NONCE_LEN);
         let (m, t) = m.split_at_mut(m.len() - <<V as LocalVersion>::TagSize as Unsigned>::USIZE);
