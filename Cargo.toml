@@ -20,7 +20,7 @@ categories = [
 members = ["fuzz"]
 
 [features]
-default = []
+default = ["v3", "v4"]
 
 # V3 contains NIST approved algoritms only
 v3 = ["v3-paseto", "v3-paserk"]

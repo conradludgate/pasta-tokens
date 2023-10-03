@@ -60,17 +60,17 @@
 //!
 //! // create the token payload and footer.
 //! let token = v4::UnsignedToken::new(Payload {
-//!         // expires in 1 hour
-//!         expiration: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
-//!         user_id,
-//!     })
-//!     .with_footer(Json(Footer {
-//!         kid: secret_key.public_key().to_id(),
-//!     }))
-//!     // sign with the secret key
-//!     .sign(&secret_key)
-//!     .unwrap()
-//!     .to_string();
+//!     // expires in 1 hour
+//!     expiration: time::OffsetDateTime::now_utc() + time::Duration::hours(1),
+//!     user_id,
+//! })
+//! .with_footer(Json(Footer {
+//!     kid: secret_key.public_key().to_id(),
+//! }))
+//! // sign with the secret key
+//! .sign(&secret_key)
+//! .unwrap()
+//! .to_string();
 //!
 //! // Send off the token to the client
 //! println!("{token}");

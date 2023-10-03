@@ -79,6 +79,16 @@ pub struct PieWrappedKey<V: PieVersion, K: KeyType<V>> {
     wrapped_key: crate::Bytes<K::KeyLen>,
 }
 
+impl<V: PieVersion, K: KeyType<V>> Clone for PieWrappedKey<V, K> {
+    fn clone(&self) -> Self {
+        Self {
+            tag: self.tag,
+            nonce: self.nonce,
+            wrapped_key: self.wrapped_key.clone(),
+        }
+    }
+}
+
 impl<V, K> super::SafeForFooter for PieWrappedKey<V, K>
 where
     V: PieVersion,

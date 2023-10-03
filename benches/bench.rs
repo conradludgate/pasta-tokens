@@ -4,11 +4,15 @@ use criterion::{
     black_box, criterion_group, criterion_main, measurement::WallTime, BenchmarkGroup, Criterion,
 };
 use pasta_tokens::{
-    key::KeyType,
+    key::Key,
+    paserk::{
+        id::KeyId,
+        wrap::{PieVersion, PieWrapType},
+    },
     purpose::{
         local::{EncryptedToken, LocalVersion, SymmetricKey},
         public::{PublicKey, PublicVersion, SecretKey, SignedToken},
-        Local, Public, Purpose,
+        Local, Public, Purpose, Secret,
     },
     tokens::TokenBuilder,
     v3, v4,
@@ -48,14 +52,27 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let v4_secret_key = v4::SecretKey::new_os_random();
     public(
         v3_secret_key.public_key(),
-        v3_secret_key,
+        v3_secret_key.clone(),
         c.benchmark_group("v3/paseto/public"),
     );
     public(
         v4_secret_key.public_key(),
-        v4_secret_key,
+        v4_secret_key.clone(),
         c.benchmark_group("v4/paseto/public"),
     );
+
+    key_id(
+        v3_secret_key.public_key(),
+        v3_secret_key.clone(),
+        c.benchmark_group("v3/paserk/id"),
+    );
+    key_id(
+        v4_secret_key.public_key(),
+        v4_secret_key.clone(),
+        c.benchmark_group("v4/paserk/id"),
+    );
+    wrap::<V3>(c.benchmark_group("v3/paserk/wrap"));
+    wrap::<V4>(c.benchmark_group("v4/paserk/wrap"));
 }
 
 fn local<V: LocalVersion>(mut g: BenchmarkGroup<'_, WallTime>) {
@@ -110,6 +127,34 @@ fn public<V: PublicVersion>(
     g.bench_function("encode", |b| b.iter(|| signed_token.to_string()));
     g.bench_function("decode", |b| {
         b.iter(|| SignedToken::<V, Json<Footer>>::from_str(&encoded_token).unwrap())
+    });
+}
+
+fn key_id<V: PublicVersion + LocalVersion>(
+    public_key: PublicKey<V>,
+    secret_key: SecretKey<V>,
+    mut g: BenchmarkGroup<'_, WallTime>,
+) where
+    KeyId<V, Local>: for<'a> From<&'a Key<V, Local>>,
+    KeyId<V, Secret>: for<'a> From<&'a Key<V, Secret>>,
+    KeyId<V, Public>: for<'a> From<&'a Key<V, Public>>,
+{
+    let key = SymmetricKey::<V>::new_os_random();
+    g.bench_function("lid", |b| b.iter(|| key.to_id()));
+    g.bench_function("sid", |b| b.iter(|| secret_key.to_id()));
+    g.bench_function("pid", |b| b.iter(|| public_key.to_id()));
+}
+
+fn wrap<V: PieVersion>(mut g: BenchmarkGroup<'_, WallTime>)
+where
+    Local: PieWrapType<V>,
+{
+    let key1 = SymmetricKey::<V>::new_os_random();
+    let key2 = SymmetricKey::<V>::new_os_random();
+    g.bench_function("wrap", |b| b.iter(|| key2.wrap_pie(&key1)));
+    let wrapped = key2.wrap_pie(&key1);
+    g.bench_function("unwrap", |b| {
+        b.iter(|| wrapped.clone().unwrap_key(&key1).unwrap())
     });
 }
 
