@@ -10,7 +10,7 @@ use generic_array::ArrayLength;
 use crate::{
     encodings::{MessageDecoding, MessageEncoding, Payload},
     version::Version,
-    Bytes, Footer, PasetoError, TokenMetadata,
+    Bytes, Footer, PasetoError,
 };
 
 #[cfg(feature = "v4-public")]
@@ -135,12 +135,8 @@ impl<V: PublicVersion, M, F: Footer, E: MessageEncoding<M>> UnsignedToken<V, M, 
 
 impl<V: PublicVersion, M> UnsignedToken<V, M> {
     /// Create a new [`SignedToken`] builder with the given message payload
-    pub fn new(message: M) -> Self {
-        Self(VerifiedToken {
-            meta: TokenMetadata::default(),
-            message,
-            footer: (),
-        })
+    pub fn new_unsigned(message: M) -> Self {
+        Self::new(message)
     }
 }
 

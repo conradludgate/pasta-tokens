@@ -11,11 +11,11 @@ use rand::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
 use crate::{
-    encodings::{MessageEncoding, Payload, MessageDecoding},
+    encodings::{MessageDecoding, MessageEncoding, Payload},
     key::KeyType,
     purpose::Purpose,
     version::Version,
-    Bytes, Footer, PasetoError, TokenMetadata,
+    Bytes, Footer, PasetoError,
 };
 
 /// A symmetric key for `local` encrypted tokens
@@ -224,12 +224,8 @@ impl<V: LocalVersion, M, F: Footer, E: MessageEncoding<M>> DecryptedToken<V, M, 
 
 impl<V: LocalVersion, M> UnencryptedToken<V, M> {
     /// Create a new [`EncryptedToken`] builder with the given message payload
-    pub fn new(message: M) -> Self {
-        Self(DecryptedToken {
-            meta: TokenMetadata::default(),
-            message,
-            footer: (),
-        })
+    pub fn new_unencrypted(message: M) -> Self {
+        Self::new(message)
     }
 }
 

@@ -96,6 +96,7 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 
 libtest-mimic = "0.6.1"
+criterion = "0.5"
 
 [profile.dev.package."*"]
 opt-level = 2
@@ -113,6 +114,10 @@ harness = false
 [[test]]
 name = "paserk-test-vectors"
 path = "tests/paserk.rs"
+harness = false
+
+[[bench]]
+name = "bench"
 harness = false
 
 # Properly document all features on docs.rs

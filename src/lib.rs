@@ -414,6 +414,17 @@ pub mod tokens {
         pub(crate) ValidatedToken<V, T, M, F, E>,
     );
 
+    impl<V: crate::version::Version, T: crate::purpose::Purpose, M> TokenBuilder<V, T, M> {
+        /// Create a new [`TokenBuilder`] builder with the given message payload
+        pub fn new(message: M) -> Self {
+            Self(ValidatedToken {
+                meta: TokenMetadata::default(),
+                message,
+                footer: (),
+            })
+        }
+    }
+
     /// A secured token.
     ///
     /// This represents a PASETO that is signed or encrypted.
