@@ -56,7 +56,6 @@ cipher = "0.4.4"
 digest = { version = "0.10.7", features = ["mac"] }
 rand = "0.8.5"
 signature = "2.0.0"
-zeroize = { version = "1", features = ["zeroize_derive"] }
 
 # V4
 chacha20 = { version = "0.9.1", optional = true }
