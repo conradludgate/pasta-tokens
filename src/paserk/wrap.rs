@@ -75,8 +75,8 @@ use super::{read_b64, write_b64};
 /// ```
 pub struct PieWrappedKey<V: PieVersion, K: KeyType<V>> {
     tag: V::Tag,
-    nonce: GenericArray<u8, U32>,
-    wrapped_key: GenericArray<u8, K::KeyLen>,
+    nonce: crate::Bytes<U32>,
+    wrapped_key: crate::Bytes<K::KeyLen>,
 }
 
 impl<V, K> super::SafeForFooter for PieWrappedKey<V, K>
@@ -150,7 +150,7 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
         rng.fill_bytes(&mut n);
 
         // step 3: Derive the encryption key `Ek` and XChaCha nonce `n2`
-        let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+        let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.key.as_ref())
             .unwrap()
             .chain_update([0x80])
             .chain_update(n)
@@ -159,7 +159,7 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
         let (ek, n2) = V::split_enc_key(ek);
 
         // step 4: Derive the authentication key `Ak`
-        let ak = <V::AuthKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+        let ak = <V::AuthKeyMac as Mac>::new_from_slice(wrapping_key.key.as_ref())
             .unwrap()
             .chain_update([0x81])
             .chain_update(n)
@@ -168,8 +168,8 @@ impl<V: PieVersion, K: PieWrapType<V>> Key<V, K> {
 
         // step 5: Encrypt the plaintext key `ptk` with `Ek` and `n2` to obtain the wrapped key `c`
         let mut cipher = <V::Cipher as KeyIvInit>::new(&ek, &n2);
-        let mut c = GenericArray::<u8, K::KeyLen>::default();
-        cipher.apply_keystream_b2b(self.as_ref(), &mut c).unwrap();
+        let mut c = K::to_bytes(&self.key);
+        cipher.apply_keystream(&mut c);
 
         // step 6: Calculate the authentication tag `t`
         let tag = <V::TagMac as Mac>::new_from_slice(&ak[..32])
@@ -248,7 +248,7 @@ where
         } = self;
 
         // step 2: Derive the authentication key `Ak`
-        let ak = <V::AuthKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+        let ak = <V::AuthKeyMac as Mac>::new_from_slice(wrapping_key.key.as_ref())
             .unwrap()
             .chain_update([0x81])
             .chain_update(nonce)
@@ -273,7 +273,7 @@ where
         }
 
         // step 5: Derive the encryption key `Ek` and XChaCha nonce `n2`
-        let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.as_ref())
+        let ek = <V::EncKeyMac as Mac>::new_from_slice(wrapping_key.key.as_ref())
             .unwrap()
             .chain_update([0x80])
             .chain_update(nonce)
@@ -290,7 +290,7 @@ where
 
         // step 8: return ptk
         Ok(Key {
-            key: Box::new(wrapped_key),
+            key: Box::new(K::from_bytes(wrapped_key)?),
         })
     }
 }
@@ -349,7 +349,7 @@ pub trait PieVersion: LocalVersion {
         + OutputSizeUser<OutputSize = <Self::Tag as GenericSequence<u8>>::Length>;
 
     #[doc(hidden)]
-    type Tag: Concat<u8, U32, Rest = GenericArray<u8, U32>, Output = Self::TagIv>
+    type Tag: Concat<u8, U32, Rest = crate::Bytes<U32>, Output = Self::TagIv>
         + From<digest::Output<Self::TagMac>>
         + DerefMut<Target = [u8]>
         + Copy;
@@ -358,7 +358,7 @@ pub trait PieVersion: LocalVersion {
         u8,
         <Self::Tag as GenericSequence<u8>>::Length,
         First = Self::Tag,
-        Second = GenericArray<u8, U32>,
+        Second = crate::Bytes<U32>,
     >;
 
     #[doc(hidden)]
@@ -375,7 +375,7 @@ impl PieVersion for V3 {
     type TagMac = hmac::Hmac<sha2::Sha384>;
 
     type Tag = digest::Output<Self::TagMac>;
-    type TagIv = GenericArray<u8, generic_array::typenum::U80>;
+    type TagIv = crate::Bytes<generic_array::typenum::U80>;
 
     fn split_enc_key(
         ek: digest::Output<Self::EncKeyMac>,
@@ -392,7 +392,7 @@ impl PieVersion for V4 {
     type TagMac = blake2::Blake2bMac<U32>;
 
     type Tag = digest::Output<Self::TagMac>;
-    type TagIv = GenericArray<u8, generic_array::typenum::U64>;
+    type TagIv = crate::Bytes<generic_array::typenum::U64>;
 
     fn split_enc_key(
         ek: digest::Output<Self::EncKeyMac>,
@@ -422,39 +422,39 @@ pub trait PieWrapType<V: PieVersion>: KeyType<V> + WrapType {
             u8,
             <V::TagIv as GenericSequence<u8>>::Length,
             First = V::TagIv,
-            Second = GenericArray<u8, Self::KeyLen>,
+            Second = crate::Bytes<Self::KeyLen>,
         > + Default
         + DerefMut<Target = [u8]>;
     #[doc(hidden)]
     type TagIv: From<V::TagIv>
-        + Concat<u8, Self::KeyLen, Rest = GenericArray<u8, Self::KeyLen>, Output = Self::Output>;
+        + Concat<u8, Self::KeyLen, Rest = crate::Bytes<Self::KeyLen>, Output = Self::Output>;
 }
 
 #[cfg(feature = "v3-wrap")]
 impl PieWrapType<V3> for Local {
     // 32 + 48 + 32 = 112
-    type Output = GenericArray<u8, generic_array::typenum::U112>;
+    type Output = crate::Bytes<generic_array::typenum::U112>;
     type TagIv = <V3 as PieVersion>::TagIv;
 }
 
 #[cfg(all(feature = "v3-wrap", feature = "v3-public"))]
 impl PieWrapType<V3> for Secret {
     // 32 + 48 + 48 = 128
-    type Output = GenericArray<u8, generic_array::typenum::U128>;
+    type Output = crate::Bytes<generic_array::typenum::U128>;
     type TagIv = <V3 as PieVersion>::TagIv;
 }
 
 #[cfg(feature = "v4-wrap")]
 impl PieWrapType<V4> for Local {
     // 32 + 32 + 32 = 96
-    type Output = GenericArray<u8, generic_array::typenum::U96>;
+    type Output = crate::Bytes<generic_array::typenum::U96>;
     type TagIv = <V4 as PieVersion>::TagIv;
 }
 
 #[cfg(all(feature = "v4-wrap", feature = "v4-public"))]
 impl PieWrapType<V4> for Secret {
     // 32 + 32 + 64 = 128
-    type Output = GenericArray<u8, generic_array::typenum::U128>;
+    type Output = crate::Bytes<generic_array::typenum::U128>;
     type TagIv = <V4 as PieVersion>::TagIv;
 }
 

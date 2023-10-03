@@ -4,7 +4,7 @@ use digest::{FixedOutput, Mac};
 use generic_array::{
     sequence::Split,
     typenum::{IsLessOrEqual, LeEq, NonZero, U32, U56, U64},
-    ArrayLength, GenericArray,
+    ArrayLength,
 };
 
 use super::{
@@ -42,7 +42,7 @@ impl GenericCipher for Cipher {
 
     type Stream = XChaCha20;
 
-    fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream {
+    fn key_iv_init(pair: crate::Bytes<Self::KeyIvPair>) -> Self::Stream {
         let (key, iv) = pair.split();
         XChaCha20::new(&key, &iv)
     }

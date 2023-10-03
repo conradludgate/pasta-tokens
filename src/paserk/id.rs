@@ -55,7 +55,7 @@ use super::write_b64;
 /// // kid.to_string() => "k4.pid.yMgldRRLHBLkhmcp8NG8yZrtyldbYoAjQWPv_Ma1rzRu"
 /// ```
 pub struct KeyId<V: Version, K: KeyType<V>> {
-    id: GenericArray<u8, U33>,
+    id: crate::Bytes<U33>,
     key: PhantomData<(V, K)>,
 }
 
@@ -156,7 +156,7 @@ impl<K: KeyType<V3>> From<&Key<V3, K>> for KeyId<V3, K> {
         // V3 Public keys are 49 bytes, V3 private keys are 48 bytes, symmetric keys are 32 bytes.
         // allocate enough space for 49 bytes base64 encoded which is ~66
         let mut output = [0; 49 * 4 / 3 + 3];
-        let p = Base64UrlUnpadded::encode(key.as_ref(), &mut output).unwrap();
+        let p = Base64UrlUnpadded::encode(&K::to_bytes(&key.key), &mut output).unwrap();
 
         let mut derive_d = sha2::Sha384::new();
         derive_d.update(V3::PASERK_HEADER);
@@ -185,7 +185,7 @@ impl<K: KeyType<V4>> From<&Key<V4, K>> for KeyId<V4, K> {
         // V4 Public keys are 64 bytes, symmetric keys are 32 bytes.
         // allocate enough space for 64 bytes base64 encoded
         let mut output = [0; 64 * 4 / 3 + 3];
-        let p = Base64UrlUnpadded::encode(key.as_ref(), &mut output).unwrap();
+        let p = Base64UrlUnpadded::encode(&K::to_bytes(&key.key), &mut output).unwrap();
 
         let mut derive_d = blake2::Blake2b::<U33>::new();
         derive_d.update(V4::PASERK_HEADER);

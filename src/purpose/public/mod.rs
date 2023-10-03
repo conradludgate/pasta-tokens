@@ -55,12 +55,28 @@ impl<V: PublicVersion> crate::key::KeyType<V> for Public {
     type KeyLen = V::PublicKeySize;
     const KEY_HEADER: &'static str = "public.";
     const ID: &'static str = "pid.";
+
+    type InnerKeyType = V::InnerPublicKeyType;
+    fn to_bytes(k: &Self::InnerKeyType) -> Bytes<Self::KeyLen> {
+        V::to_public_bytes(k)
+    }
+    fn from_bytes(k: Bytes<Self::KeyLen>) -> Result<Self::InnerKeyType, PasetoError> {
+        V::from_public_bytes(k)
+    }
 }
 
 impl<V: PublicVersion> crate::key::KeyType<V> for Secret {
     type KeyLen = V::SecretKeySize;
     const KEY_HEADER: &'static str = "secret.";
     const ID: &'static str = "sid.";
+
+    type InnerKeyType = V::InnerSecretKeyType;
+    fn to_bytes(k: &Self::InnerKeyType) -> Bytes<Self::KeyLen> {
+        V::to_secret_bytes(k)
+    }
+    fn from_bytes(k: Bytes<Self::KeyLen>) -> Result<Self::InnerKeyType, PasetoError> {
+        V::from_secret_bytes(k)
+    }
 }
 
 /// General information about a PASETO/PASERK version
@@ -74,8 +90,25 @@ pub trait PublicVersion: Version {
     type Signature: ArrayLength<u8>;
 
     #[doc(hidden)]
+    type InnerPublicKeyType: Clone;
+    #[doc(hidden)]
+    type InnerSecretKeyType: Clone;
+    #[doc(hidden)]
+    fn from_secret_bytes(
+        k: Bytes<Self::SecretKeySize>,
+    ) -> Result<Self::InnerSecretKeyType, PasetoError>;
+    #[doc(hidden)]
+    fn from_public_bytes(
+        k: Bytes<Self::PublicKeySize>,
+    ) -> Result<Self::InnerPublicKeyType, PasetoError>;
+    #[doc(hidden)]
+    fn to_secret_bytes(k: &Self::InnerSecretKeyType) -> Bytes<Self::SecretKeySize>;
+    #[doc(hidden)]
+    fn to_public_bytes(k: &Self::InnerPublicKeyType) -> Bytes<Self::PublicKeySize>;
+
+    #[doc(hidden)]
     fn sign(
-        sk: &Bytes<Self::SecretKeySize>,
+        sk: &Self::InnerSecretKeyType,
         h: &[u8],
         m: &[u8],
         f: &[u8],
@@ -84,7 +117,7 @@ pub trait PublicVersion: Version {
 
     #[doc(hidden)]
     fn verify(
-        k: &Bytes<Self::PublicKeySize>,
+        k: &Self::InnerPublicKeyType,
         h: &[u8],
         m: &[u8],
         f: &[u8],

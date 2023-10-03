@@ -4,7 +4,6 @@ use std::{fmt, str::FromStr};
 
 use base64ct::{Base64UrlUnpadded, Encoding};
 use cipher::Unsigned;
-use generic_array::GenericArray;
 
 use crate::{
     key::{Key, KeyType},
@@ -25,7 +24,7 @@ impl<V: Version, K: KeyType<V>> fmt::Display for PlaintextKey<V, K> {
         f.write_str(V::PASERK_HEADER)?;
         f.write_str(".")?;
         f.write_str(K::KEY_HEADER)?;
-        write_b64(&self.key.key, f)
+        write_b64(&K::to_bytes(&self.key.key), f)
     }
 }
 
@@ -41,7 +40,7 @@ impl<V: Version, K: KeyType<V>> FromStr for PlaintextKey<V, K> {
             .strip_prefix(K::KEY_HEADER)
             .ok_or(PasetoError::InvalidToken)?;
 
-        let mut key = Box::<GenericArray<u8, K::KeyLen>>::default();
+        let mut key = crate::Bytes::<K::KeyLen>::default();
         let len = Base64UrlUnpadded::decode(s, &mut key)
             .map_err(|_| PasetoError::Base64DecodeError)?
             .len();
@@ -49,7 +48,11 @@ impl<V: Version, K: KeyType<V>> FromStr for PlaintextKey<V, K> {
             return Err(PasetoError::Base64DecodeError);
         }
 
-        Ok(PlaintextKey { key: Key { key } })
+        Ok(PlaintextKey {
+            key: Key {
+                key: Box::new(K::from_bytes(key)?),
+            },
+        })
     }
 }
 

@@ -23,8 +23,10 @@ use crate::version::V3;
 use crate::version::V4;
 use crate::{
     key::{Key, KeyType},
-    purpose::{local::Local, public::Secret},
-    version::Version,
+    purpose::{
+        local::{Local, LocalVersion},
+        public::Secret,
+    },
     PasetoError,
 };
 
@@ -77,7 +79,7 @@ pub struct PwWrappedKey<V: PwVersion, K: PwWrapType<V>> {
     salt: V::Salt,
     state: V::KdfState,
     nonce: cipher::Iv<V::Cipher>,
-    edk: GenericArray<u8, K::KeyLen>,
+    edk: crate::Bytes<K::KeyLen>,
     tag: digest::Output<V::TagMac>,
 }
 
@@ -175,7 +177,7 @@ impl<V: PwVersion, K: PwWrapType<V>> Key<V, K> {
 
         let mut edk = GenericArray::<u8, K::KeyLen>::default();
         <V::Cipher as KeyIvInit>::new(&ek, &n)
-            .apply_keystream_b2b(self.as_ref(), &mut edk)
+            .apply_keystream_b2b(&K::to_bytes(&self.key), &mut edk)
             .unwrap();
 
         let tag = <V::TagMac as Mac>::new_from_slice(&ak)
@@ -236,7 +238,7 @@ impl<V: PwVersion, K: PwWrapType<V>> PwWrappedKey<V, K> {
         <V::Cipher as KeyIvInit>::new(&ek, &self.nonce).apply_keystream(&mut self.edk);
 
         Ok(Key {
-            key: Box::new(self.edk),
+            key: Box::new(K::from_bytes(self.edk)?),
         })
     }
 
@@ -338,7 +340,7 @@ impl Default for Argon2State {
 }
 
 /// Version info for configuring password wrapping
-pub trait PwVersion: Version {
+pub trait PwVersion: LocalVersion {
     /// The settings that the KDF function uses
     type KdfState: Default;
 
@@ -355,7 +357,7 @@ pub trait PwVersion: Version {
     type Salt: Concat<
             u8,
             Self::KdfStateLen,
-            Rest = GenericArray<u8, Self::KdfStateLen>,
+            Rest = crate::Bytes<Self::KdfStateLen>,
             Output = Self::SaltState,
         > + DerefMut<Target = [u8]>
         + Copy
@@ -366,7 +368,7 @@ pub trait PwVersion: Version {
             u8,
             <Self::Salt as GenericSequence<u8>>::Length,
             First = Self::Salt,
-            Second = GenericArray<u8, Self::KdfStateLen>,
+            Second = crate::Bytes<Self::KdfStateLen>,
         > + Concat<
             u8,
             <Self::Cipher as IvSizeUser>::IvSize,
@@ -383,16 +385,16 @@ pub trait PwVersion: Version {
     >;
 
     #[doc(hidden)]
-    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> GenericArray<u8, U32>;
+    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> crate::Bytes<U32>;
 
     #[doc(hidden)]
     fn split_ek(ek: digest::Output<Self::KeyHash>) -> cipher::Key<Self::Cipher>;
 
     #[doc(hidden)]
-    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen>;
+    fn encode_state(s: &Self::KdfState) -> crate::Bytes<Self::KdfStateLen>;
 
     #[doc(hidden)]
-    fn decode_state(s: GenericArray<u8, Self::KdfStateLen>) -> Self::KdfState;
+    fn decode_state(s: crate::Bytes<Self::KdfStateLen>) -> Self::KdfState;
 }
 
 /// Key wrapping type. Can be either `local-pw.` or `secret-pw.`
@@ -413,23 +415,18 @@ impl PwType for Secret {
 pub trait PwWrapType<V: PwVersion>: KeyType<V> + PwType {
     #[doc(hidden)]
     type SaltStateIv: From<V::SaltStateIv>
-        + Concat<
-            u8,
-            Self::KeyLen,
-            Rest = GenericArray<u8, Self::KeyLen>,
-            Output = Self::SaltStateIvEdk,
-        >;
+        + Concat<u8, Self::KeyLen, Rest = crate::Bytes<Self::KeyLen>, Output = Self::SaltStateIvEdk>;
 
     #[doc(hidden)]
     type SaltStateIvEdk: Split<
             u8,
             <V::SaltStateIv as GenericSequence<u8>>::Length,
             First = V::SaltStateIv,
-            Second = GenericArray<u8, Self::KeyLen>,
+            Second = crate::Bytes<Self::KeyLen>,
         > + Concat<
             u8,
             <V::TagMac as OutputSizeUser>::OutputSize,
-            Rest = GenericArray<u8, <V::TagMac as OutputSizeUser>::OutputSize>,
+            Rest = crate::Bytes<<V::TagMac as OutputSizeUser>::OutputSize>,
             Output = Self::SaltStateIvEdkTag,
         >;
 
@@ -438,7 +435,7 @@ pub trait PwWrapType<V: PwVersion>: KeyType<V> + PwType {
             u8,
             <Self::SaltStateIvEdk as GenericSequence<u8>>::Length,
             First = Self::SaltStateIvEdk,
-            Second = GenericArray<u8, <V::TagMac as OutputSizeUser>::OutputSize>,
+            Second = crate::Bytes<<V::TagMac as OutputSizeUser>::OutputSize>,
         > + DerefMut<Target = [u8]>
         + Default;
 }
@@ -452,11 +449,11 @@ impl PwVersion for V3 {
     type KdfStateLen = generic_array::typenum::U4;
     type KdfState = Pbkdf2State;
 
-    type Salt = GenericArray<u8, generic_array::typenum::U32>;
-    type SaltState = GenericArray<u8, generic_array::typenum::U36>;
-    type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
+    type Salt = crate::Bytes<generic_array::typenum::U32>;
+    type SaltState = crate::Bytes<generic_array::typenum::U36>;
+    type SaltStateIv = crate::Bytes<generic_array::typenum::U52>;
 
-    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> GenericArray<u8, U32> {
+    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> crate::Bytes<U32> {
         pbkdf2::pbkdf2_hmac_array::<sha2::Sha384, 32>(pw, salt.as_slice(), state.iterations).into()
     }
 
@@ -465,10 +462,10 @@ impl PwVersion for V3 {
         ek
     }
 
-    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen> {
+    fn encode_state(s: &Self::KdfState) -> crate::Bytes<Self::KdfStateLen> {
         s.iterations.to_be_bytes().into()
     }
-    fn decode_state(s: GenericArray<u8, Self::KdfStateLen>) -> Self::KdfState {
+    fn decode_state(s: crate::Bytes<Self::KdfStateLen>) -> Self::KdfState {
         let i = u32::from_be_bytes(s.into());
         Pbkdf2State { iterations: i }
     }
@@ -483,11 +480,11 @@ impl PwVersion for V4 {
     type KdfStateLen = generic_array::typenum::U16;
     type KdfState = Argon2State;
 
-    type Salt = GenericArray<u8, generic_array::typenum::U16>;
-    type SaltState = GenericArray<u8, generic_array::typenum::U32>;
-    type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
+    type Salt = crate::Bytes<generic_array::typenum::U16>;
+    type SaltState = crate::Bytes<generic_array::typenum::U32>;
+    type SaltStateIv = crate::Bytes<generic_array::typenum::U56>;
 
-    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> GenericArray<u8, U32> {
+    fn kdf(pw: &[u8], salt: &Self::Salt, state: &Self::KdfState) -> crate::Bytes<U32> {
         let mut out = GenericArray::<u8, U32>::default();
         argon2::Argon2::new(
             argon2::Algorithm::Argon2id,
@@ -503,18 +500,18 @@ impl PwVersion for V4 {
         ek
     }
 
-    fn encode_state(s: &Self::KdfState) -> GenericArray<u8, Self::KdfStateLen> {
+    fn encode_state(s: &Self::KdfState) -> crate::Bytes<Self::KdfStateLen> {
         GenericArray::<u8, generic_array::typenum::U4>::default()
             .concat(s.mem.to_be_bytes().into())
             .concat(s.time.to_be_bytes().into())
             .concat(s.para.to_be_bytes().into())
     }
-    fn decode_state(s: GenericArray<u8, Self::KdfStateLen>) -> Self::KdfState {
+    fn decode_state(s: crate::Bytes<Self::KdfStateLen>) -> Self::KdfState {
         let (mem1, b) = s.split();
         let (mem2, b) = b.split();
         let (time, para) = b.split();
 
-        let _mem1: GenericArray<u8, generic_array::typenum::U4> = mem1;
+        let _mem1: crate::Bytes<generic_array::typenum::U4> = mem1;
         let mem = u32::from_be_bytes(mem2.into());
         let time = u32::from_be_bytes(time.into());
         let para = u32::from_be_bytes(para.into());
@@ -525,30 +522,30 @@ impl PwVersion for V4 {
 
 #[cfg(feature = "v4-pbkw")]
 impl PwWrapType<V4> for Local {
-    type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
-    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U88>;
-    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U120>;
+    type SaltStateIv = crate::Bytes<generic_array::typenum::U56>;
+    type SaltStateIvEdk = crate::Bytes<generic_array::typenum::U88>;
+    type SaltStateIvEdkTag = crate::Bytes<generic_array::typenum::U120>;
 }
 
 #[cfg(feature = "v3-pbkw")]
 impl PwWrapType<V3> for Local {
-    type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
-    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U84>;
-    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U132>;
+    type SaltStateIv = crate::Bytes<generic_array::typenum::U52>;
+    type SaltStateIvEdk = crate::Bytes<generic_array::typenum::U84>;
+    type SaltStateIvEdkTag = crate::Bytes<generic_array::typenum::U132>;
 }
 
 #[cfg(all(feature = "v4-pbkw", feature = "v4-public"))]
 impl PwWrapType<V4> for Secret {
-    type SaltStateIv = GenericArray<u8, generic_array::typenum::U56>;
-    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U120>;
-    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U152>;
+    type SaltStateIv = crate::Bytes<generic_array::typenum::U56>;
+    type SaltStateIvEdk = crate::Bytes<generic_array::typenum::U120>;
+    type SaltStateIvEdkTag = crate::Bytes<generic_array::typenum::U152>;
 }
 
 #[cfg(all(feature = "v3-pbkw", feature = "v3-public"))]
 impl PwWrapType<V3> for Secret {
-    type SaltStateIv = GenericArray<u8, generic_array::typenum::U52>;
-    type SaltStateIvEdk = GenericArray<u8, generic_array::typenum::U100>;
-    type SaltStateIvEdkTag = GenericArray<u8, generic_array::typenum::U148>;
+    type SaltStateIv = crate::Bytes<generic_array::typenum::U52>;
+    type SaltStateIvEdk = crate::Bytes<generic_array::typenum::U100>;
+    type SaltStateIvEdkTag = crate::Bytes<generic_array::typenum::U148>;
 }
 
 impl<V: PwVersion, K: PwWrapType<V>> serde::Serialize for PwWrappedKey<V, K> {

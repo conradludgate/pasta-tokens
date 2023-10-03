@@ -38,19 +38,39 @@ impl PublicVersion for V3 {
     /// P-384 Secret Key (384 bits = 48 bytes)
     type SecretKeySize = U48;
 
+    type InnerPublicKeyType = p384::ecdsa::VerifyingKey;
+    type InnerSecretKeyType = p384::ecdsa::SigningKey;
+
+    fn from_secret_bytes(
+        k: Bytes<Self::SecretKeySize>,
+    ) -> Result<Self::InnerSecretKeyType, crate::PasetoError> {
+        p384::ecdsa::SigningKey::from_slice(&k).map_err(|_| crate::PasetoError::InvalidKey)
+    }
+
+    fn from_public_bytes(
+        k: Bytes<Self::PublicKeySize>,
+    ) -> Result<Self::InnerPublicKeyType, crate::PasetoError> {
+        p384::ecdsa::VerifyingKey::from_sec1_bytes(&k).map_err(|_| crate::PasetoError::InvalidKey)
+    }
+
+    fn to_secret_bytes(k: &Self::InnerSecretKeyType) -> Bytes<Self::SecretKeySize> {
+        k.to_bytes()
+    }
+
+    fn to_public_bytes(k: &Self::InnerPublicKeyType) -> Bytes<Self::PublicKeySize> {
+        *Bytes::from_slice(k.to_encoded_point(true).as_bytes())
+    }
+
     type Signature = U96;
 
     fn sign(
-        sk: &Bytes<Self::SecretKeySize>,
+        sk: &Self::InnerSecretKeyType,
         h: &[u8],
         m: &[u8],
         f: &[u8],
         i: &[u8],
     ) -> Bytes<Self::Signature> {
-        let sk = p384::ecdsa::SigningKey::from_bytes(sk)
-            .expect("secret key validity should already be asserted");
-
-        let pk: p384::EncodedPoint = sk.verifying_key().to_encoded_point(true);
+        let pk = sk.verifying_key().to_encoded_point(true);
         let pk = pk.as_bytes();
 
         let digest = digest(pk, h, m, f, i);
@@ -60,17 +80,14 @@ impl PublicVersion for V3 {
     }
 
     fn verify(
-        k: &Bytes<Self::PublicKeySize>,
+        k: &Self::InnerPublicKeyType,
         h: &[u8],
         m: &[u8],
         f: &[u8],
         i: &[u8],
         sig: &Bytes<Self::Signature>,
     ) -> Result<(), signature::Error> {
-        let k = p384::ecdsa::VerifyingKey::from_sec1_bytes(k)
-            .expect("secret key validity should already be asserted");
-
-        let pk: p384::EncodedPoint = k.to_encoded_point(true);
+        let pk = k.to_encoded_point(true);
         let pk = pk.as_bytes();
 
         let digest = digest(pk, h, m, f, i);

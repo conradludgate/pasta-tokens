@@ -198,7 +198,7 @@ impl PbkwTest {
 
             match wrapped_key.unwrap_key(self.password.as_bytes()) {
                 Err(err) => Err(err.to_string().into()),
-                Ok(key) if key.as_ref() != unwrapped => Err("key mismatch".into()),
+                Ok(key) if &*key.to_bytes() != &*unwrapped => Err("key mismatch".into()),
                 Ok(_) => Ok(()),
             }
         }
@@ -253,7 +253,7 @@ impl PkeTest {
 
         let unsealed = hex::decode(self.unsealed.unwrap()).unwrap();
 
-        if key.as_ref() != unsealed {
+        if &*key.to_bytes() != &*unsealed {
             return Err("unseal failed".into());
         }
         Ok(())
@@ -312,7 +312,7 @@ impl PieWrapTest {
 
             match wrapped_key.unwrap_key(&wrapping_key) {
                 Err(err) => Err(err.to_string().into()),
-                Ok(key) if key.as_ref() != unwrapped => Err("key mismatch".into()),
+                Ok(key) if &*key.to_bytes() != &*unwrapped => Err("key mismatch".into()),
                 Ok(_) => Ok(()),
             }
         }

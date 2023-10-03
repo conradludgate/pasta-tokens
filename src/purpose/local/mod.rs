@@ -6,7 +6,7 @@
 
 use cipher::{KeyInit, StreamCipher, Unsigned};
 use digest::Mac;
-use generic_array::{ArrayLength, GenericArray};
+use generic_array::ArrayLength;
 use rand::{CryptoRng, RngCore};
 use subtle::ConstantTimeEq;
 
@@ -53,6 +53,14 @@ impl<V: LocalVersion> KeyType<V> for Local {
     type KeyLen = V::KeySize;
     const KEY_HEADER: &'static str = "local.";
     const ID: &'static str = "lid.";
+
+    type InnerKeyType = Bytes<Self::KeyLen>;
+    fn to_bytes(k: &Self::InnerKeyType) -> Bytes<Self::KeyLen> {
+        k.clone()
+    }
+    fn from_bytes(k: Bytes<Self::KeyLen>) -> Result<Self::InnerKeyType, PasetoError> {
+        Ok(k)
+    }
 }
 
 /// General information about a PASETO/PASERK version
@@ -106,7 +114,7 @@ pub(crate) trait Kdf<OutputSize: ArrayLength<u8>> {
 pub(crate) trait GenericCipher {
     type KeyIvPair: ArrayLength<u8>;
     type Stream: cipher::StreamCipher;
-    fn key_iv_init(pair: GenericArray<u8, Self::KeyIvPair>) -> Self::Stream;
+    fn key_iv_init(pair: crate::Bytes<Self::KeyIvPair>) -> Self::Stream;
 }
 
 const NONCE_LEN: usize = 32;

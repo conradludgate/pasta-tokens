@@ -13,7 +13,7 @@ use generic_array::{
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 use crate::{
-    key::Key,
+    key::{Key, KeyType},
     purpose::{
         local::{Local, LocalVersion},
         public::{Public, PublicVersion, Secret},
@@ -30,7 +30,7 @@ use crate::version::V4;
 
 #[cfg(any(feature = "v3-pke", feature = "v4-pke"))]
 use ::{
-    cipher::{inout::InOutBuf, KeyIvInit, StreamCipher},
+    cipher::{KeyIvInit, StreamCipher},
     digest::{Digest, Mac},
     generic_array::sequence::{Concat, Split},
     subtle::ConstantTimeEq,
@@ -64,9 +64,9 @@ use super::{read_b64, write_b64};
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct SealedKey<V: SealedVersion> {
-    tag: GenericArray<u8, V::TagLen>,
-    ephemeral_public_key: GenericArray<u8, V::EpkLen>,
-    encrypted_data_key: GenericArray<u8, V::KeySize>,
+    tag: crate::Bytes<V::TagLen>,
+    ephemeral_public_key: crate::Bytes<V::EpkLen>,
+    encrypted_data_key: crate::Bytes<V::KeySize>,
 }
 
 impl<V> super::SafeForFooter for SealedKey<V> where V: SealedVersion {}
@@ -129,9 +129,9 @@ pub trait SealedVersion: LocalVersion + PublicVersion + Sized {
     type TotalLen: ArrayLength<u8>;
     #[allow(clippy::type_complexity)]
     #[doc(hidden)]
-    fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self>;
+    fn split_total(total: crate::Bytes<Self::TotalLen>) -> SealedKey<Self>;
     #[doc(hidden)]
-    fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen>;
+    fn join_total(sealed: &SealedKey<Self>) -> crate::Bytes<Self::TotalLen>;
 
     #[doc(hidden)]
     fn seal(
@@ -153,7 +153,7 @@ impl SealedVersion for V3 {
 
     /// extra byte is for annoying base64 padding
     type TotalLen = generic_array::typenum::U129;
-    fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self> {
+    fn split_total(total: crate::Bytes<Self::TotalLen>) -> SealedKey<Self> {
         let (tag, rest) = total.split();
         let (ephemeral_public_key, encrypted_data_key) = rest.split();
         SealedKey {
@@ -162,7 +162,7 @@ impl SealedVersion for V3 {
             encrypted_data_key,
         }
     }
-    fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen> {
+    fn join_total(sealed: &SealedKey<Self>) -> crate::Bytes<Self::TotalLen> {
         sealed
             .tag
             .concat(sealed.ephemeral_public_key)
@@ -177,7 +177,8 @@ impl SealedVersion for V3 {
         use p384::ecdh::EphemeralSecret;
         use p384::{EncodedPoint, PublicKey};
 
-        let pk = PublicKey::from_sec1_bytes(sealing_key.as_ref()).unwrap();
+        let pk = PublicKey::from_affine(*sealing_key.key.as_affine()).unwrap();
+        let pk_bytes = <Public as KeyType<V3>>::to_bytes(&sealing_key.key);
 
         let esk = EphemeralSecret::random(rng);
         let epk: EncodedPoint = esk.public_key().into();
@@ -192,7 +193,7 @@ impl SealedVersion for V3 {
             .chain_update(".seal.")
             .chain_update(xk.raw_secret_bytes())
             .chain_update(epk)
-            .chain_update(sealing_key.as_ref())
+            .chain_update(pk_bytes)
             .finalize()
             .split();
 
@@ -202,12 +203,11 @@ impl SealedVersion for V3 {
             .chain_update(".seal.")
             .chain_update(xk.raw_secret_bytes())
             .chain_update(epk)
-            .chain_update(sealing_key.as_ref())
+            .chain_update(pk_bytes)
             .finalize();
 
-        let mut edk = GenericArray::<u8, <Self as LocalVersion>::KeySize>::default();
-        ctr::Ctr64BE::<aes::Aes256>::new(&ek, &n)
-            .apply_keystream_inout(InOutBuf::new(plaintext_key.as_ref(), &mut edk).unwrap());
+        let mut edk = <Local as KeyType<V3>>::to_bytes(&plaintext_key.key);
+        ctr::Ctr64BE::<aes::Aes256>::new(&ek, &n).apply_keystream(&mut edk);
 
         let tag = hmac::Hmac::<sha2::Sha384>::new_from_slice(&ak)
             .unwrap()
@@ -232,7 +232,7 @@ impl SealedVersion for V3 {
         use p384::ecdh::diffie_hellman;
         use p384::{EncodedPoint, PublicKey, SecretKey};
 
-        let sk = SecretKey::from_bytes(&unsealing_key.key).unwrap();
+        let sk = SecretKey::from_bytes(&unsealing_key.key.to_bytes()).unwrap();
 
         let pk: EncodedPoint = sk.public_key().into();
         let pk = pk.compress();
@@ -290,7 +290,7 @@ impl SealedVersion for V4 {
     type EpkLen = generic_array::typenum::U32;
 
     type TotalLen = generic_array::typenum::U96;
-    fn split_total(total: GenericArray<u8, Self::TotalLen>) -> SealedKey<Self> {
+    fn split_total(total: crate::Bytes<Self::TotalLen>) -> SealedKey<Self> {
         let (tag, rest) = total.split();
         let (ephemeral_public_key, encrypted_data_key) = rest.split();
         SealedKey {
@@ -299,7 +299,7 @@ impl SealedVersion for V4 {
             encrypted_data_key,
         }
     }
-    fn join_total(sealed: &SealedKey<Self>) -> GenericArray<u8, Self::TotalLen> {
+    fn join_total(sealed: &SealedKey<Self>) -> crate::Bytes<Self::TotalLen> {
         sealed
             .tag
             .concat(sealed.ephemeral_public_key)
@@ -312,15 +312,13 @@ impl SealedVersion for V4 {
         rng: &mut (impl RngCore + CryptoRng),
     ) -> SealedKey<Self> {
         use curve25519_dalek::{
-            edwards::{CompressedEdwardsY, EdwardsPoint},
+            edwards::EdwardsPoint,
             scalar::{clamp_integer, Scalar},
         };
 
         // Given a plaintext data key (pdk), and an Ed25519 public key (pk).
-        let pk = CompressedEdwardsY((*sealing_key.key).into());
-
         // step 1: Calculate the birationally-equivalent X25519 public key (xpk) from pk.
-        let xpk = pk.decompress().unwrap().to_montgomery();
+        let xpk = sealing_key.key.to_montgomery();
 
         let esk = Scalar::from_bytes_mod_order(clamp_integer({
             let mut esk = [0; 32];
@@ -355,9 +353,8 @@ impl SealedVersion for V4 {
             .chain_update(xpk.as_bytes())
             .finalize();
 
-        let mut edk = GenericArray::<u8, <Self as LocalVersion>::KeySize>::default();
-        chacha20::XChaCha20::new(&ek, &n)
-            .apply_keystream_inout(InOutBuf::new(plaintext_key.as_ref(), &mut edk).unwrap());
+        let mut edk = <Local as KeyType<V4>>::to_bytes(&plaintext_key.key);
+        chacha20::XChaCha20::new(&ek, &n).apply_keystream(&mut edk);
 
         let tag = blake2::Blake2bMac::new_from_slice(&ak)
             .unwrap()
@@ -379,19 +376,14 @@ impl SealedVersion for V4 {
         mut sealed_key: SealedKey<Self>,
         unsealing_key: &Key<Self, Secret>,
     ) -> Result<Key<Self, Local>, PasetoError> {
-        use curve25519_dalek::edwards::CompressedEdwardsY;
         use ed25519_dalek::hazmat::ExpandedSecretKey;
 
         let epk: [u8; 32] = sealed_key.ephemeral_public_key.into();
         let epk = curve25519_dalek::MontgomeryPoint(epk);
 
         // expand pk/sk pair from ed25519 to x25519
-        let (sk, pk) = unsealing_key.key.split();
-        let pk = CompressedEdwardsY(pk.into());
-        let xpk = pk.decompress().unwrap().to_montgomery();
-
-        let sk: ed25519_dalek::SecretKey = sk.into();
-        let xsk = ExpandedSecretKey::from(&sk);
+        let xpk = unsealing_key.key.verifying_key().to_montgomery();
+        let xsk = ExpandedSecretKey::from(&unsealing_key.key.to_bytes());
 
         // diffie hellman exchange
         let xk = xsk.scalar * epk;
@@ -449,7 +441,7 @@ impl<V: SealedVersion> FromStr for SealedKey<V> {
             .ok_or(PasetoError::InvalidToken)?;
         let s = s.strip_prefix(".seal.").ok_or(PasetoError::InvalidToken)?;
 
-        let total = read_b64::<GenericArray<u8, V::TotalLen>>(s)?;
+        let total = read_b64::<crate::Bytes<V::TotalLen>>(s)?;
 
         Ok(V::split_total(total))
     }
