@@ -45,8 +45,6 @@ impl<V: Version, K: KeyType<V>> Clone for Key<V, K> {
     }
 }
 
-// impl<V: Version, K: KeyType<V>> Copy for Key<V, K> where crate::Bytes<K::KeyLen>: Copy {}
-
 impl<V: Version, K: KeyType<V>> fmt::Debug for Key<V, K> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("Key");
