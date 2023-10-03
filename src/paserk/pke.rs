@@ -5,15 +5,11 @@
 
 use std::{fmt, str::FromStr};
 
-use generic_array::{
-    // sequence::{Concat, Split},
-    ArrayLength,
-    GenericArray,
-};
+use generic_array::ArrayLength;
 use rand::{rngs::OsRng, CryptoRng, RngCore};
 
 use crate::{
-    key::{Key, KeyType},
+    key::Key,
     purpose::{
         local::{Local, LocalVersion},
         public::{Public, PublicVersion, Secret},
@@ -21,12 +17,12 @@ use crate::{
     PasetoError,
 };
 
-#[cfg(any(feature = "v3-pke", feature = "v4-pke"))]
-use crate::version::Version;
 #[cfg(feature = "v3-pke")]
 use crate::version::V3;
 #[cfg(feature = "v4-pke")]
 use crate::version::V4;
+#[cfg(any(feature = "v3-pke", feature = "v4-pke"))]
+use crate::{key::KeyType, version::Version};
 
 #[cfg(any(feature = "v3-pke", feature = "v4-pke"))]
 use ::{
@@ -220,7 +216,7 @@ impl SealedVersion for V3 {
 
         SealedKey {
             tag,
-            ephemeral_public_key: *GenericArray::from_slice(epk),
+            ephemeral_public_key: *crate::Bytes::from_slice(epk),
             encrypted_data_key: edk,
         }
     }
